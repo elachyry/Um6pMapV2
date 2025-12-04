@@ -327,7 +327,7 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
             {activeTab === 'contact' && (
               <div>
                 <ContactInfoEditor
-                  contactInfo={formData.contactInfo}
+                  contacts={formData.contactInfo}
                   onChange={(info) => setFormData({ ...formData, contactInfo: info })}
                 />
               </div>
