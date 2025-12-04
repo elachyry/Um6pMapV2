@@ -1,0 +1,630 @@
+// Prisma Schema for UM6P Map Platform
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Note: SQLite doesn't support enums, using String with validation in code
+// Valid values for userType: "PERMANENT", "TEMPORARY", "ADMIN", "SUPER_ADMIN"
+// Valid values for userStatus: "ACTIVE", "INACTIVE", "SUSPENDED", "PENDING"
+// Valid values for reservationStatus: "PENDING", "APPROVED", "REJECTED", "CANCELLED", "COMPLETED"
+// Valid values for accessRequestStatus: "PENDING", "APPROVED", "REJECTED"
+// Valid values for eventStatus: "DRAFT", "PUBLISHED", "CANCELLED", "COMPLETED"
+
+// User Model
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  firstName String?
+  lastName  String?
+  phone     String?
+  avatar    String?
+  department String?
+  
+  userType  String   @default("PERMANENT")
+  status    String @default("ACTIVE")
+  
+  // Temporary user fields
+  startDate DateTime?
+  endDate   DateTime?
+  purpose   String?
+  
+  // Security
+  loginAttempts Int      @default(0)
+  lockedUntil   DateTime?
+  lastLoginAt   DateTime?
+  refreshToken  String?   // JWT refresh token
+  refreshTokenExpiry DateTime? // Refresh token expiration
+  
+  // Relations
+  campusId String?
+  campus   Campus? @relation(fields: [campusId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // User relations
+  userRoles       UserRole[]
+  reservations    Reservation[]
+  createdEvents   Event[]        @relation("EventCreator")
+  accessRequests  AccessRequest[]
+  auditLogs       AuditLog[]
+  
+  @@index([email])
+  @@index([userType])
+  @@index([status])
+  @@index([campusId])
+}
+
+// Role-Based Access Control
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  scope       String   @default("CAMPUS") // GLOBAL or CAMPUS
+  isSystem    Boolean  @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  userRoles   UserRole[]
+  permissions RolePermission[]
+  
+  @@index([name])
+  @@index([scope])
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., "campus:view", "building:create"
+  resource    String   // e.g., "campus", "building", "event"
+  action      String   // e.g., "view", "create", "update", "delete"
+  description String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  roles RolePermission[]
+  
+  @@index([resource])
+  @@index([action])
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+  
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id        String    @id @default(uuid())
+  userId    String
+  roleId    String
+  campusId  String?   // For campus-specific roles
+  grantedBy String?
+  expiresAt DateTime?
+  
+  createdAt DateTime @default(now())
+  
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  campus Campus? @relation(fields: [campusId], references: [id])
+  
+  @@unique([userId, roleId, campusId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+// Campus & Buildings
+model Campus {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  address     String?
+  coordinates String?    // JSON string: { lat, lng }
+  mapData     String?    // JSON string: Map configuration (legacy)
+  
+  // Map Settings
+  mapStyle           String?  // Mapbox style URL or preset (e.g., 'mapbox://styles/mapbox/streets-v12')
+  buildingHoverColor String?  @default("#4F46E5") // Hex color for building hover state
+  buildingHighlightColor String? @default("#EF4444") // Hex color for selected/highlighted building
+  mapCenter          String?  // JSON string: { lat, lng } - calculated from boundary or manual
+  initialZoom        Float?   @default(15.0) // Default zoom level when map loads
+  minZoom            Float?   @default(10.0) // Minimum zoom level allowed
+  maxZoom            Float?   @default(22.0) // Maximum zoom level allowed
+  
+  // Map Layer Visibility
+  showBuildings      Boolean  @default(true)  // Show/hide building polygons
+  showPaths          Boolean  @default(true)  // Show/hide walkways and paths
+  showBoundaries     Boolean  @default(true)  // Show/hide campus boundaries
+  showParkingLots    Boolean  @default(true)  // Show/hide parking areas
+  showOpenSpaces     Boolean  @default(true)  // Show/hide green spaces, plazas
+  showPOIs           Boolean  @default(true)  // Show/hide points of interest markers
+  showLabels         Boolean  @default(true)  // Show/hide building/location labels
+  showGLBModels      Boolean  @default(false) // Show/hide 3D GLB models
+  
+  isActive    Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  buildings Buildings[]
+  users     User[]
+  userRoles UserRole[]
+  events    Event[]
+  models    BuildingModel[]
+  
+  @@index([slug])
+  @@index([isActive])
+}
+
+model Buildings {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String
+  description String?
+  campusId    String?
+  categoryId  String?
+  
+  // Building details
+  address     String?
+  coordinates String?    // JSON string: { lat, lng }
+  floorPlans  String?    // JSON string: Array of floor plan data
+  height      Float?     @default(5.0) // Building height in meters
+  
+  // 3D Model Configuration
+  modelId          String? // Reference to BuildingModel
+  modelScale       Float?  @default(1.0)
+  modelRotationX   Float?  @default(0.0)
+  modelRotationY   Float?  @default(0.0)
+  modelRotationZ   Float?  @default(0.0)
+  modelOffsetX     Float?  @default(0.0)
+  modelOffsetY     Float?  @default(0.0)
+  modelOffsetZ     Float?  @default(0.0)
+  
+  // Features
+  isReservable Boolean @default(false)
+  isActive     Boolean @default(true)
+  capacity     Int?
+  facilities   String? // JSON string: Array of facility names
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  campus       Campus?              @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  category     Category?            @relation(fields: [categoryId], references: [id])
+  locations    Location[]
+  operatingHours OperatingHours[]
+  contactInfo  ContactInfo[]
+  images       BuildingImage[]
+  documents    BuildingDocument[]
+  amenities    BuildingAmenity[]
+  events       Event[]
+  reservations Reservation[]
+  
+  @@unique([campusId, slug])
+  @@index([campusId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  buildings Buildings[]
+  pois      POI[]
+  
+  @@index([slug])
+}
+
+// Locations & POIs
+model Location {
+  id          String   @id @default(uuid())
+  name        String
+  buildingId  String
+  floor       Int
+  roomNumber  String?
+  description String?
+  coordinates String?    // JSON string: { x, y } on floor plan
+  
+  locationType String  // "room", "office", "lab", "hall", etc.
+  capacity     Int?
+  isReservable Boolean @default(false)
+  facilities   String? // JSON string: Array of facilities
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  building       Buildings          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  reservations   Reservation[]
+  images         LocationImage[]
+  documents      LocationDocument[]
+  contactInfo    ContactInfo[]
+  operatingHours OperatingHours[]
+  
+  @@unique([buildingId, floor, roomNumber])
+  @@index([buildingId])
+  @@index([floor])
+}
+
+model POI {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  categoryId  String?
+  
+  // Location
+  coordinates String    // JSON string: { lat, lng }
+  floor       Int?
+  buildingRef String? // Reference to building if indoor
+  
+  // Display
+  icon     String?
+  imageUrl String?
+  isActive Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  category Category? @relation(fields: [categoryId], references: [id])
+  
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+// Events
+model Event {
+  id          String      @id @default(uuid())
+  title       String
+  description String?
+  status      String @default("DRAFT")
+  
+  // Location
+  campusId   String?
+  buildingId String?
+  location   String? // Free text location
+  
+  // Timing
+  startDate DateTime
+  endDate   DateTime
+  isAllDay  Boolean  @default(false)
+  
+  // Media & Details
+  imageUrl     String?
+  organizerId  String
+  capacity     Int?
+  registeredCount Int @default(0)
+  
+  // Visibility
+  isPublic     Boolean @default(true)
+  requiresRSVP Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  campus    Campus?    @relation(fields: [campusId], references: [id])
+  building  Buildings? @relation(fields: [buildingId], references: [id])
+  organizer User       @relation("EventCreator", fields: [organizerId], references: [id])
+  sessions  EventSession[]
+  media     EventMedia[]
+  
+  @@index([campusId])
+  @@index([buildingId])
+  @@index([organizerId])
+  @@index([startDate])
+  @@index([status])
+}
+
+model EventSession {
+  id          String   @id @default(uuid())
+  eventId     String
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  location    String?
+  speakers    String? // JSON string: Array of speaker names
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@index([eventId])
+  @@index([startTime])
+}
+
+model EventMedia {
+  id       String  @id @default(uuid())
+  eventId  String
+  type     String  // "image", "video", "document"
+  url      String
+  caption  String?
+  position Int     @default(0)
+  
+  createdAt DateTime @default(now())
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  @@index([eventId])
+}
+
+// Reservations
+model Reservation {
+  id          String            @id @default(uuid())
+  userId      String
+  status      String @default("PENDING")
+  
+  // Resource
+  resourceType String // "building" or "location"
+  buildingId   String?
+  locationId   String?
+  
+  // Timing
+  startDate DateTime
+  endDate   DateTime
+  startTime String
+  endTime   String
+  
+  // Details
+  purpose     String
+  notes       String?
+  capacity    Int?
+  
+  // Approval
+  reviewedBy String?
+  reviewedAt DateTime?
+  reviewNotes String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  building Buildings? @relation(fields: [buildingId], references: [id])
+  location Location?  @relation(fields: [locationId], references: [id])
+  
+  @@index([userId])
+  @@index([buildingId])
+  @@index([locationId])
+  @@index([status])
+  @@index([startDate])
+}
+
+// Access Requests
+model AccessRequest {
+  id          String              @id @default(uuid())
+  userId      String
+  requestType String              // "building_access", "event_access", etc.
+  targetId    String?             // ID of the building/event being requested
+  reason      String
+  status      String @default("PENDING")
+  
+  // Approval
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+  
+  // Validity
+  validFrom DateTime?
+  validUntil DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@index([requestType])
+}
+
+// Audit Log
+model AuditLog {
+  id       String   @id @default(uuid())
+  userId   String?
+  action   String   // "create", "update", "delete", "login", etc.
+  resource String   // "user", "building", "event", etc.
+  resourceId String?
+  
+  // Request details
+  method   String?  // HTTP method
+  endpoint String?
+  ip       String?
+  userAgent String?
+  
+  // Changes
+  changes  String?    // JSON string: Before/after data
+  metadata String?    // JSON string: Additional context
+  
+  level    String   @default("info") // "info", "warning", "error"
+  
+  createdAt DateTime @default(now())
+  
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+}
+
+// Building Images
+model BuildingImage {
+  id           String   @id @default(uuid())
+  buildingId   String
+  imageUrl     String
+  caption      String?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  building Buildings @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  
+  @@index([buildingId])
+  @@index([buildingId, displayOrder])
+}
+
+// Building Documents
+model BuildingDocument {
+  id           String   @id @default(uuid())
+  buildingId   String
+  documentUrl  String
+  title        String
+  fileType     String
+  fileSize     Int?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  building Buildings @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  
+  @@index([buildingId])
+  @@index([buildingId, displayOrder])
+}
+
+// Campus 3D Models (GLB files)
+model BuildingModel {
+  id          String   @id @default(uuid())
+  campusId    String
+  modelUrl    String   // Cloudinary URL for GLB file
+  name        String   // Model name for identification
+  fileSize    Int?
+  isActive    Boolean  @default(true) // Whether to use this model for rendering
+  scale       Float?   @default(1.0) // Model scale factor
+  rotation    String?  // JSON string: { x, y, z } rotation in degrees
+  offset      String?  // JSON string: { x, y, z } position offset
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  campus Campus @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  @@index([campusId])
+  @@index([campusId, isActive])
+}
+
+// Contact Information (reusable for Buildings and Locations)
+model ContactInfo {
+  id          String   @id @default(uuid())
+  type        String   // phone, email, website, facebook, twitter, instagram, linkedin
+  value       String
+  label       String?  // e.g., "Main Office", "Customer Support"
+  isPrimary   Boolean  @default(false)
+  buildingId  String?
+  locationId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  building Buildings? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  location Location?  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@index([buildingId])
+  @@index([locationId])
+  @@index([type])
+}
+
+// Operating Hours (reusable for Buildings and Locations)
+model OperatingHours {
+  id          String   @id @default(uuid())
+  dayOfWeek   Int      // 0=Sunday, 1=Monday, ..., 6=Saturday
+  openTime    String?  // HH:MM format, null if closed
+  closeTime   String?  // HH:MM format, null if closed
+  isClosed    Boolean  @default(false)
+  is24Hours   Boolean  @default(false)
+  buildingId  String?
+  locationId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  building Buildings? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  location Location?  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@index([buildingId])
+  @@index([locationId])
+  @@index([dayOfWeek])
+}
+
+// Building Amenities
+model BuildingAmenity {
+  id          String   @id @default(uuid())
+  buildingId  String
+  amenityId   String
+  createdAt   DateTime @default(now())
+  
+  building Buildings @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  amenity  Amenity   @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  
+  @@unique([buildingId, amenityId])
+  @@index([buildingId])
+  @@index([amenityId])
+}
+
+// Amenities Master List
+model Amenity {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  category    String   // Accessibility, Technology, Facilities, Safety, etc.
+  icon        String?
+  isCustom    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  buildings BuildingAmenity[]
+  
+  @@index([category])
+  @@index([isCustom])
+}
+
+// Location Images
+model LocationImage {
+  id           String   @id @default(uuid())
+  locationId   String
+  imageUrl     String
+  caption      String?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@index([locationId])
+  @@index([locationId, displayOrder])
+}
+
+// Location Documents
+model LocationDocument {
+  id           String   @id @default(uuid())
+  locationId   String
+  documentUrl  String
+  title        String
+  fileType     String
+  fileSize     Int?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  @@index([locationId])
+  @@index([locationId, displayOrder])
+}
