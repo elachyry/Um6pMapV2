@@ -187,7 +187,8 @@ export const importFromGeoJSON = async (campusId: string, geojson: any) => {
   for (const feature of geojson.features) {
     try {
       const name = feature.properties?.name || 'Unnamed'
-      const coordinates = JSON.stringify(feature.geometry?.coordinates || [])
+      // Store the full geometry object (type + coordinates), not just coordinates array
+      const coordinates = JSON.stringify(feature.geometry || {})
 
       // Check for duplicate by coordinates
       const existing = await openSpaceRepository.findByCoordinates(coordinates)

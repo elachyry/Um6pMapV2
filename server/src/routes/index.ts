@@ -13,6 +13,8 @@ import openSpaceRoutes from './openSpaceRoutes'
 import { campusRoutes } from './campusRoutes'
 import uploadRoutes from './uploadRoutes'
 import categoryRoutes from './categoryRoutes'
+import poiRoutes from './poiRoutes'
+import pathRoutes from './pathRoutes'
 
 export async function registerRoutes(fastify: FastifyInstance) {
   // API prefix
@@ -111,6 +113,25 @@ export async function registerRoutes(fastify: FastifyInstance) {
     
     instance.register(openSpaceRoutes, { 
       prefix: '/open-spaces',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(poiRoutes, { 
+      prefix: '/pois',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(pathRoutes, { 
       config: {
         rateLimit: {
           max: 100,

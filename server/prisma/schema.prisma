@@ -167,6 +167,8 @@ model Campus {
   userRoles UserRole[]
   events    Event[]
   models    BuildingModel[]
+  pois      POI[]
+  paths     Path[]
   
   @@index([slug])
   @@index([isActive])
@@ -332,6 +334,8 @@ model POI {
   building    Buildings? @relation(fields: [buildingId], references: [id])
   openSpaceId String?
   openSpace   OpenSpace? @relation(fields: [openSpaceId], references: [id])
+  campusId    String?
+  campus      Campus?    @relation(fields: [campusId], references: [id], onDelete: Cascade)
   
   // Display
   icon     String?
@@ -347,6 +351,29 @@ model POI {
   @@index([isActive])
   @@index([buildingId])
   @@index([openSpaceId])
+  @@index([campusId])
+}
+
+// Paths (Walkways)
+model Path {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  description String?
+  
+  // Location
+  coordinates String    // JSON string: LineString GeoJSON
+  campusId    String?
+  campus      Campus?   @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  // Display
+  isActive Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([campusId])
+  @@index([isActive])
 }
 
 // Events

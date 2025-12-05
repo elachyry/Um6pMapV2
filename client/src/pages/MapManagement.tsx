@@ -10,12 +10,17 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { BuildingForm } from '@/components/BuildingForm'
 import LocationForm from '@/components/LocationForm'
 import { OpenSpaceForm } from '@/components/OpenSpaceForm'
+import { POIForm } from '@/components/POIForm'
+import { PathForm } from '@/components/PathForm'
+import { PathPreview } from '@/components/PathPreview'
 import { useToast } from '@/hooks/useToast'
 import { useCampusStore } from '@/stores/campusStore'
 import { useNavigationStore } from '@/stores/navigationStore'
 import { importBuildings, getAllBuildings, getBuildingById, deleteBuilding, updateBuilding, createBuilding, ImportResult } from '@/api/buildingApi'
 import { getLocations, createLocation, updateLocation, deleteLocation, toggleLocationReservable } from '@/api/locationApi'
 import { importOpenSpaces, getOpenSpaces, deleteOpenSpace, toggleOpenSpaceActive, createOpenSpace, getOpenSpaceById, ImportResult as OpenSpaceImportResult } from '@/api/openSpaceApi'
+import { getPOIs, importPOIs, deletePOI, togglePOIActive, getPOIById, createPOI, updatePOI, ImportResult as POIImportResult } from '@/api/poiApi'
+import { getAllPaths, importPaths, deletePath, togglePathActive, getPathById, createPath, updatePath, ImportResult as PathImportResult } from '@/api/pathApi'
 import { getActiveCampuses } from '@/api/campusApi'
 import { getAllCategories } from '@/api/categoryApi'
 import { uploadBuildingImage, uploadBuildingDocument, reorderBuildingImages, reorderBuildingDocuments, uploadLocationImage, uploadLocationDocument, reorderLocationImages, reorderLocationDocuments, uploadOpenSpaceImage, uploadOpenSpaceDocument, reorderOpenSpaceImages, reorderOpenSpaceDocuments } from '@/api/uploadApi'
@@ -81,7 +86,22 @@ export default function MapManagement() {
   const [openSpaceImportResult, setOpenSpaceImportResult] = useState<OpenSpaceImportResult | null>(null)
   const [showOpenSpaceForm, setShowOpenSpaceForm] = useState(false)
   const [editingOpenSpace, setEditingOpenSpace] = useState<any | null>(null)
+  const [showPOIForm, setShowPOIForm] = useState(false)
+  const [editingPOI, setEditingPOI] = useState<any | null>(null)
   const [isSubmittingOpenSpace, setIsSubmittingOpenSpace] = useState(false)
+
+  // POI state
+  const [pois, setPois] = useState<any[]>([])
+  const [poiPage, setPoiPage] = useState(1)
+  const [poiTotalPages, setPoiTotalPages] = useState(1)
+  const [totalPOIs, setTotalPOIs] = useState(0)
+  const [poiSearchQuery, setPoiSearchQuery] = useState('')
+  const [isImportingPOIs, setIsImportingPOIs] = useState(false)
+  const [poiImportResult, setPoiImportResult] = useState<POIImportResult | null>(null)
+  const poiFileInputRef = useRef<HTMLInputElement>(null)
+  const POIS_PER_PAGE = 12
+  const [poiToDelete, setPoiToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [poiToToggle, setPoiToToggle] = useState<{ id: string; name: string; isActive: boolean } | null>(null)
 
   // Campuses state
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string }>>([])
@@ -100,6 +120,29 @@ export default function MapManagement() {
     variant: 'default' | 'danger' | 'warning'
     onConfirm: () => void
   }>({ isOpen: false, title: '', message: '', variant: 'default', onConfirm: () => {} })
+
+  // Dropdown data state
+  const [dropdownBuildings, setDropdownBuildings] = useState<any[]>([])
+  const [dropdownOpenSpaces, setDropdownOpenSpaces] = useState<any[]>([])
+
+  // Paths state
+  const [paths, setPaths] = useState<any[]>([])
+  const [pathPage, setPathPage] = useState(1)
+  const [pathTotalPages, setPathTotalPages] = useState(1)
+  const [totalPaths, setTotalPaths] = useState(0)
+  const [pathSearchQuery, setPathSearchQuery] = useState('')
+  const [isImportingPaths, setIsImportingPaths] = useState(false)
+  const [pathImportResult, setPathImportResult] = useState<PathImportResult | null>(null)
+  const pathFileInputRef = useRef<HTMLInputElement>(null)
+  const PATHS_PER_PAGE = 12
+  const [pathToDelete, setPathToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [pathToToggle, setPathToToggle] = useState<{ id: string; name: string; isActive: boolean } | null>(null)
+  const [showPathForm, setShowPathForm] = useState(false)
+  const [editingPath, setEditingPath] = useState<any | null>(null)
+  const [isSubmittingPath, setIsSubmittingPath] = useState(false)
+  const [showPathPreview, setShowPathPreview] = useState(false)
+  const [previewPath, setPreviewPath] = useState<any | null>(null)
+  const [showMapView, setShowMapView] = useState(false)
 
   /**
    * Fetch buildings from API
@@ -124,7 +167,27 @@ export default function MapManagement() {
   }
 
   /**
-   * Fetch all buildings for dropdowns
+   * Fetch all data for dropdowns
+   * Purpose: Load all buildings and open spaces for the current campus (for forms)
+   */
+  const fetchDropdownData = async () => {
+    if (!selectedCampusId) return
+    
+    try {
+      const [buildingsResponse, openSpacesResponse] = await Promise.all([
+        getAllBuildings(1, 1000, '', selectedCampusId, ''),
+        getOpenSpaces(1, 1000, '', selectedCampusId, '')
+      ]) as [any, any]
+      
+      setDropdownBuildings(buildingsResponse.data || [])
+      setDropdownOpenSpaces(openSpacesResponse.data || [])
+    } catch (error: any) {
+      console.error('Failed to fetch dropdown data:', error)
+    }
+  }
+
+  /**
+   * Fetch all buildings for dropdowns (Legacy - kept for location form compatibility)
    * Purpose: Load all buildings for the current campus (for location form)
    */
   const fetchAllBuildingsForDropdown = async () => {
@@ -198,7 +261,317 @@ export default function MapManagement() {
       loadOpenSpaces()
     }
   }, [activeSection, openSpacePage, selectedCampusId, openSpaceSearchQuery, selectedOpenSpaceType])
+
+  /**
+   * Load POIs
+   * Purpose: Fetch POIs from API
+   */
+  const loadPOIs = async () => {
+    if (!selectedCampusId) return
+    
+    try {
+      const response: any = await getPOIs(poiPage, POIS_PER_PAGE, selectedCampusId, poiSearchQuery)
+      setPois(response.data || [])
+      setPoiTotalPages(response.pagination?.totalPages || 1)
+      setTotalPOIs(response.pagination?.total || 0)
+    } catch (error) {
+      console.error('Failed to load POIs:', error)
+      toast.error('Failed to load POIs')
+    }
+  }
+
+  /**
+   * Effect to fetch POIs when section, page, or campus changes
+   */
+  useEffect(() => {
+    if (activeSection === 'poi' && selectedCampusId) {
+      loadPOIs()
+      fetchDropdownData()
+    }
+  }, [activeSection, poiPage, selectedCampusId, poiSearchQuery])
+
+  /**
+   * Handle toggle POI active status
+   * Purpose: Show confirmation dialog for POI activation/deactivation
+   */
+  const handleTogglePOIActive = (e: React.MouseEvent, id: string, name: string, isActive: boolean) => {
+    e.stopPropagation()
+    setPoiToToggle({ id, name, isActive })
+  }
+
+  /**
+   * Confirm toggle POI active status
+   * Purpose: Execute POI activation/deactivation after confirmation
+   */
+  const confirmTogglePOIActive = async () => {
+    if (!poiToToggle) return
+    
+    try {
+      await togglePOIActive(poiToToggle.id)
+      toast.success(`${poiToToggle.name} ${poiToToggle.isActive ? 'deactivated' : 'activated'} successfully`)
+      setPoiToToggle(null)
+      await loadPOIs()
+    } catch (error: any) {
+      console.error('Failed to toggle POI status:', error)
+      toast.error(error.message || 'Failed to update POI status')
+    }
+  }
+
+  /**
+   * Handle delete POI
+   * Purpose: Show confirmation dialog for POI deletion
+   */
+  const handleDeletePOI = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation()
+    setPoiToDelete({ id, name })
+  }
+
+  /**
+   * Confirm delete POI
+   * Purpose: Delete POI after confirmation
+   */
+  const confirmDeletePOI = async () => {
+    if (!poiToDelete) return
+
+    try {
+      await deletePOI(poiToDelete.id)
+      toast.success(`${poiToDelete.name} deleted successfully`)
+      setPoiToDelete(null)
+      await loadPOIs()
+    } catch (error: any) {
+      console.error('Failed to delete POI:', error)
+      toast.error(error.message || 'Failed to delete POI')
+    }
+  }
+
+  /**
+   * Handle add POI
+   * Purpose: Open form to create new POI
+   */
+  const handleAddPOI = () => {
+    setEditingPOI(null)
+    setShowPOIForm(true)
+  }
+
+  /**
+   * Handle edit POI
+   * Purpose: Open form to edit existing POI
+   */
+  const handleEditPOI = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const poi = await getPOIById(id)
+      setEditingPOI(poi)
+      setShowPOIForm(true)
+    } catch (error: any) {
+      console.error('Failed to fetch POI:', error)
+      toast.error('Failed to load POI data')
+    }
+  }
+
+  /**
+   * Handle POI form submit
+   * Purpose: Create or update POI with automatically selected campus
+   */
+  const handlePOIFormSubmit = async (data: any) => {
+    try {
+      // Sanitize data: convert empty strings to null for optional relations
+      const sanitizedData = {
+        ...data,
+        campusId: selectedCampusId,
+        buildingId: data.buildingId || null,
+        openSpaceId: data.openSpaceId || null,
+        floor: data.floor === '' ? null : data.floor,
+        buildingRef: data.buildingRef || null
+      }
+      
+      if (editingPOI) {
+        await updatePOI(editingPOI.id, sanitizedData)
+        toast.success('POI updated successfully')
+      } else {
+        await createPOI(sanitizedData)
+        toast.success('POI created successfully')
+      }
+      setShowPOIForm(false)
+      setEditingPOI(null)
+      await loadPOIs()
+    } catch (error: any) {
+      console.error('Failed to save POI:', error)
+      toast.error(error.message || 'Failed to save POI')
+    }
+  }
   
+  /**
+   * Load paths
+   * Purpose: Fetch paths from API
+   */
+  const loadPaths = async () => {
+    if (!selectedCampusId) return
+    
+    try {
+      const response: any = await getAllPaths(pathPage, PATHS_PER_PAGE, pathSearchQuery, selectedCampusId)
+      setPaths(response.data || [])
+      setPathTotalPages(response.pagination?.totalPages || 1)
+      setTotalPaths(response.pagination?.total || 0)
+    } catch (error) {
+      console.error('Failed to load paths:', error)
+      toast.error('Failed to load paths')
+    }
+  }
+
+  /**
+   * Effect to fetch paths when section, page, or campus changes
+   */
+  useEffect(() => {
+    if (activeSection === 'paths' && selectedCampusId) {
+      loadPaths()
+    }
+  }, [activeSection, pathPage, selectedCampusId, pathSearchQuery])
+
+  /**
+   * Handle path import
+   * Purpose: Import paths from GeoJSON file
+   */
+  const handlePathImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!selectedCampusId) {
+      toast.error('Please select a campus first')
+      return
+    }
+
+    setIsImportingPaths(true)
+    setPathImportResult(null)
+    
+    try {
+      const text = await file.text()
+      const geojson = JSON.parse(text)
+      const result = await importPaths(geojson, selectedCampusId)
+      
+      setPathImportResult(result)
+      toast.success(`Import completed! Imported ${result.imported} paths.`)
+      await loadPaths()
+    } catch (error: any) {
+      console.error('Import failed:', error)
+      toast.error(error.message || 'Failed to import paths')
+    } finally {
+      setIsImportingPaths(false)
+      if (pathFileInputRef.current) {
+        pathFileInputRef.current.value = ''
+      }
+    }
+  }
+
+  /**
+   * Handle toggle path active status
+   * Purpose: Show confirmation dialog for path activation/deactivation
+   */
+  const handleTogglePathActive = (e: React.MouseEvent, id: string, name: string, isActive: boolean) => {
+    e.stopPropagation()
+    setPathToToggle({ id, name, isActive })
+  }
+
+  /**
+   * Confirm toggle path active status
+   * Purpose: Execute path activation/deactivation after confirmation
+   */
+  const confirmTogglePathActive = async () => {
+    if (!pathToToggle) return
+    
+    try {
+      await togglePathActive(pathToToggle.id)
+      toast.success(`${pathToToggle.name} ${pathToToggle.isActive ? 'deactivated' : 'activated'} successfully`)
+      setPathToToggle(null)
+      await loadPaths()
+    } catch (error: any) {
+      console.error('Failed to toggle path status:', error)
+      toast.error(error.message || 'Failed to update path status')
+    }
+  }
+
+  /**
+   * Handle delete path
+   * Purpose: Show confirmation dialog for path deletion
+   */
+  const handleDeletePath = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation()
+    setPathToDelete({ id, name })
+  }
+
+  /**
+   * Confirm delete path
+   * Purpose: Delete path after confirmation
+   */
+  const confirmDeletePath = async () => {
+    if (!pathToDelete) return
+
+    try {
+      await deletePath(pathToDelete.id)
+      toast.success(`${pathToDelete.name} deleted successfully`)
+      setPathToDelete(null)
+      await loadPaths()
+    } catch (error: any) {
+      console.error('Failed to delete path:', error)
+      toast.error(error.message || 'Failed to delete path')
+    }
+  }
+
+  /**
+   * Handle add path
+   * Purpose: Open form to create new path
+   */
+  const handleAddPath = () => {
+    setEditingPath(null)
+    setShowPathForm(true)
+  }
+
+  /**
+   * Handle edit path
+   * Purpose: Open form to edit existing path
+   */
+  const handleEditPath = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const path = await getPathById(id)
+      setEditingPath(path)
+      setShowPathForm(true)
+    } catch (error: any) {
+      console.error('Failed to fetch path:', error)
+      toast.error('Failed to load path data')
+    }
+  }
+
+  /**
+   * Handle path form submit
+   * Purpose: Create or update path with automatically selected campus
+   */
+  const handlePathFormSubmit = async (data: any) => {
+    setIsSubmittingPath(true)
+    try {
+      const pathData = {
+        ...data,
+        campusId: selectedCampusId,
+      }
+      
+      if (editingPath) {
+        await updatePath(editingPath.id, pathData)
+        toast.success('Path updated successfully')
+      } else {
+        await createPath(pathData)
+        toast.success('Path created successfully')
+      }
+      setShowPathForm(false)
+      setEditingPath(null)
+      await loadPaths()
+    } catch (error: any) {
+      console.error('Failed to save path:', error)
+      toast.error(error.message || 'Failed to save path')
+    } finally {
+      setIsSubmittingPath(false)
+    }
+  }
+
   /**
    * Reset filters when changing sections
    */
@@ -212,6 +585,8 @@ export default function MapManagement() {
     setOpenSpaceSearchQuery('')
     setSelectedOpenSpaceType('')
     setOpenSpacePage(1)
+    setPathSearchQuery('')
+    setPathPage(1)
   }, [activeSection])
 
   /**
@@ -879,6 +1254,40 @@ export default function MapManagement() {
   }
 
   /**
+   * Handle POI import
+   * Purpose: Import POIs from GeoJSON file
+   */
+  const handlePOIImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !selectedCampusId) return
+
+    setPoiImportResult(null)
+    setIsImportingPOIs(true)
+
+    try {
+      const result = await importPOIs(selectedCampusId, file)
+      
+      if (!result || typeof result.imported === 'undefined') {
+        throw new Error('Invalid response from server')
+      }
+      
+      setPoiImportResult(result)
+      
+      // Refresh POIs list
+      await loadPOIs()
+      
+      if (poiFileInputRef.current) {
+        poiFileInputRef.current.value = ''
+      }
+    } catch (error: any) {
+      console.error('Import error:', error)
+      toast.error(error.message || 'Failed to import POIs')
+    } finally {
+      setIsImportingPOIs(false)
+    }
+  }
+
+  /**
    * Handle delete open space
    * Purpose: Delete open space with confirmation
    */
@@ -1169,6 +1578,18 @@ export default function MapManagement() {
                     onChange={handleFileChange}
                     className="hidden"
                   />
+                  {activeSection === 'paths' && (
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowMapView(true)}
+                      size="sm"
+                      className="text-xs sm:text-sm"
+                    >
+                      <Map className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                      <span className="hidden xs:inline">Map View</span>
+                      <span className="xs:hidden">Map</span>
+                    </Button>
+                  )}
                   <Button 
                     variant="outline" 
                     onClick={() => {
@@ -1176,9 +1597,19 @@ export default function MapManagement() {
                         handleImportClick()
                       } else if (activeSection === 'open-spaces') {
                         openSpaceFileInputRef.current?.click()
+                      } else if (activeSection === 'poi') {
+                        poiFileInputRef.current?.click()
+                      } else if (activeSection === 'paths') {
+                        pathFileInputRef.current?.click()
                       }
                     }}
-                    disabled={activeSection === 'buildings' ? isImporting : activeSection === 'open-spaces' ? isImportingOpenSpaces : false}
+                    disabled={
+                      activeSection === 'buildings' ? isImporting : 
+                      activeSection === 'open-spaces' ? isImportingOpenSpaces : 
+                      activeSection === 'poi' ? isImportingPOIs : 
+                      activeSection === 'paths' ? isImportingPaths : 
+                      false
+                    }
                     size="sm"
                     className="text-xs sm:text-sm"
                   >
@@ -1186,6 +1617,8 @@ export default function MapManagement() {
                     <span className="hidden xs:inline">
                       {activeSection === 'buildings' && isImporting ? 'Importing...' : 
                        activeSection === 'open-spaces' && isImportingOpenSpaces ? 'Importing...' : 
+                       activeSection === 'poi' && isImportingPOIs ? 'Importing...' :
+                       activeSection === 'paths' && isImportingPaths ? 'Importing...' :
                        'Import'}
                     </span>
                     <span className="xs:hidden">Import</span>
@@ -1201,6 +1634,10 @@ export default function MapManagement() {
                     setShowLocationForm(true)
                   } else if (activeSection === 'open-spaces') {
                     handleAddOpenSpace()
+                  } else if (activeSection === 'poi') {
+                    handleAddPOI()
+                  } else if (activeSection === 'paths') {
+                    handleAddPath()
                   }
                 }} 
                 size="sm" 
@@ -2188,27 +2625,538 @@ export default function MapManagement() {
       )}
 
         {activeSection === 'poi' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Points of Interest</CardTitle>
-            <CardDescription>Manage campus points of interest</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">POI management content coming soon...</p>
-          </CardContent>
-        </Card>
+        <>
+          <input
+            ref={poiFileInputRef}
+            type="file"
+            accept=".geojson,.json"
+            onChange={handlePOIImport}
+            className="hidden"
+          />
+
+          {/* Import Result Alert */}
+          {poiImportResult && (
+            <Card className="border-green-200 bg-green-50 mb-3 md:mb-6">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-green-900 mb-2">Import Complete</h4>
+                    <div className="grid grid-cols-4 gap-4 mb-3">
+                      <div>
+                        <p className="text-sm text-green-700">Total</p>
+                        <p className="text-2xl font-bold text-green-900">{poiImportResult.total}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-green-700">Imported</p>
+                        <p className="text-2xl font-bold text-green-900">{poiImportResult.imported}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-orange-700">Duplicates</p>
+                        <p className="text-2xl font-bold text-orange-900">{poiImportResult.duplicates}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-red-700">Errors</p>
+                        <p className="text-2xl font-bold text-red-900">{poiImportResult.errors}</p>
+                      </div>
+                    </div>
+                    {poiImportResult.details.imported.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-sm font-medium text-green-800 mb-1">Imported POIs:</p>
+                        <p className="text-sm text-green-700">{poiImportResult.details.imported.join(', ')}</p>
+                      </div>
+                    )}
+                    {poiImportResult.details.duplicates.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-orange-800 mb-1">Duplicates Skipped:</p>
+                        <p className="text-sm text-orange-700">{poiImportResult.details.duplicates.join(', ')}</p>
+                      </div>
+                    )}
+                    {poiImportResult.details.errors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
+                        {poiImportResult.details.errors.map((err, idx) => (
+                          <p key={idx} className="text-sm text-red-700">{err.name}: {err.error}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setPoiImportResult(null)}
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Search Bar */}
+          <Card className="mb-3 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search POIs by name..."
+                    value={poiSearchQuery}
+                    onChange={(e) => {
+                      setPoiSearchQuery(e.target.value)
+                      setPoiPage(1)
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+                {poiSearchQuery && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPoiSearchQuery('')
+                      setPoiPage(1)
+                    }}
+                    className="whitespace-nowrap"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {totalPOIs > 0 && (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Showing {pois.length} of {totalPOIs} POIs
+                  {poiSearchQuery && ` matching "${poiSearchQuery}"`}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* POI Cards Grid */}
+          <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {pois.map((poi: any) => {
+              // Get image from associated building or open space
+              const image = poi.building?.images?.[0]?.imageUrl || poi.openSpace?.images?.[0]?.imageUrl
+              
+              return (
+                <Card 
+                  key={poi.id} 
+                  className="overflow-hidden hover:shadow-lg transition-all group"
+                >
+                  {/* POI Image */}
+                  <div className="aspect-video bg-muted relative overflow-hidden group-hover:shadow-inner">
+                    {image ? (
+                      <img 
+                        src={image} 
+                        alt={poi.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500/10 to-blue-500/5">
+                        <MapPin className="w-16 h-16 text-blue-500/40 group-hover:text-blue-500/60 transition-colors" />
+                      </div>
+                    )}
+                    
+                    {/* Status Dot */}
+                    <div className="absolute top-3 left-3">
+                      <div className={`w-2 h-2 rounded-full shadow-sm ${poi.isActive ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} title={poi.isActive ? 'Active' : 'Inactive'} />
+                    </div>
+
+                    {/* Action Buttons Overlay - Always visible on mobile */}
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                      <Button 
+                        variant="secondary" 
+                        size="icon"
+                        className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                        onClick={(e) => handleTogglePOIActive(e, poi.id, poi.name, poi.isActive)}
+                        title={poi.isActive ? 'Deactivate' : 'Activate'}
+                      >
+                        <Power className={`w-4 h-4 ${poi.isActive ? 'text-green-600' : 'text-gray-400'}`} />
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        size="icon"
+                        className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                        onClick={(e) => handleEditPOI(e, poi.id)}
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4 text-blue-600" />
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        size="icon"
+                        className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-red-50"
+                        onClick={(e) => handleDeletePOI(e, poi.id, poi.name)}
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* POI Info */}
+                  <CardContent className="p-3 md:p-4">
+                    <div className="mb-2">
+                      <h3 className="font-semibold text-base md:text-lg line-clamp-1 mb-1">{poi.name}</h3>
+                      <div className="flex items-center gap-1.5 md:gap-2 flex-wrap mt-1">
+                        {poi.category && (
+                          <Badge variant="secondary" className="text-xs px-1.5 py-0.5">{poi.category.name}</Badge>
+                        )}
+                        {poi.building && (
+                          <Badge variant="outline" className="text-xs px-1.5 py-0.5 whitespace-nowrap flex items-center gap-1 bg-blue-50 text-blue-700 border-blue-200">
+                            <Building2 className="w-3 h-3" />
+                            Building: {poi.building.name}
+                          </Badge>
+                        )}
+                        {poi.openSpace && (
+                          <Badge variant="outline" className="text-xs px-1.5 py-0.5 whitespace-nowrap flex items-center gap-1 bg-green-50 text-green-700 border-green-200">
+                            <Trees className="w-3 h-3" />
+                            Open Space: {poi.openSpace.name}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {poi.description && (
+                      <p className="text-xs md:text-sm text-muted-foreground mb-2 md:mb-3 line-clamp-2 min-h-[2.5rem]">
+                        {poi.description}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {/* Empty state */}
+          {pois.length === 0 && !isImportingPOIs && (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <MapPin className="w-16 h-16 text-muted-foreground/50 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No POIs Found</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Get started by adding a new point of interest or importing from GeoJSON
+                </p>
+                <div className="flex gap-2">
+                  <Button onClick={handleAddPOI}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add POI
+                  </Button>
+                  <Button variant="outline" onClick={() => poiFileInputRef.current?.click()}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Import GeoJSON
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Pagination */}
+          {poiTotalPages > 1 && (
+            <Card className="mt-3 md:mt-6">
+              <CardContent className="p-3 md:p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Page {poiPage} of {poiTotalPages}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPoiPage(poiPage - 1)}
+                      disabled={poiPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPoiPage(poiPage + 1)}
+                      disabled={poiPage === poiTotalPages}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
         {activeSection === 'paths' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Paths & Routes</CardTitle>
-            <CardDescription>Define walkways and navigation paths</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Path management content coming soon...</p>
-          </CardContent>
-        </Card>
+        <>
+          {/* Hidden file input for import */}
+          <input
+            ref={pathFileInputRef}
+            type="file"
+            accept=".geojson,.json"
+            onChange={handlePathImport}
+            className="hidden"
+          />
+
+          {/* Import Result Alert */}
+          {pathImportResult && (
+            <Card className="border-green-200 bg-green-50 mb-3 md:mb-6">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-green-900 mb-2">Import Complete</h4>
+                    <div className="grid grid-cols-4 gap-4 mb-3">
+                      <div>
+                        <p className="text-sm text-green-700">Total</p>
+                        <p className="text-2xl font-bold text-green-900">{pathImportResult.total}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-green-700">Imported</p>
+                        <p className="text-2xl font-bold text-green-900">{pathImportResult.imported}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-orange-700">Duplicates</p>
+                        <p className="text-2xl font-bold text-orange-900">{pathImportResult.duplicates}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-red-700">Errors</p>
+                        <p className="text-2xl font-bold text-red-900">{pathImportResult.errors}</p>
+                      </div>
+                    </div>
+                    {pathImportResult.details.imported.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-sm font-medium text-green-800 mb-1">Imported Paths:</p>
+                        <p className="text-sm text-green-700">{pathImportResult.details.imported.join(', ')}</p>
+                      </div>
+                    )}
+                    {pathImportResult.details.duplicates.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-orange-800 mb-1">Duplicates Skipped:</p>
+                        <p className="text-sm text-orange-700">{pathImportResult.details.duplicates.join(', ')}</p>
+                      </div>
+                    )}
+                    {pathImportResult.details.errors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
+                        {pathImportResult.details.errors.map((err, idx) => (
+                          <p key={idx} className="text-sm text-red-700">{err.name}: {err.error}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setPathImportResult(null)}
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Search Bar */}
+          <Card className="mb-3 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search paths by name..."
+                    value={pathSearchQuery}
+                    onChange={(e) => {
+                      setPathSearchQuery(e.target.value)
+                      setPathPage(1)
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+                {pathSearchQuery && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPathSearchQuery('')
+                      setPathPage(1)
+                    }}
+                    className="whitespace-nowrap"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              
+              {/* Results Count */}
+              {totalPaths > 0 && (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Showing {paths.length} of {totalPaths} paths
+                  {pathSearchQuery && ` matching "${pathSearchQuery}"`}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Paths Cards Grid */}
+          <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {paths.map((path: any) => (
+              <Card 
+                key={path.id} 
+                className="overflow-hidden hover:shadow-lg transition-all group cursor-pointer"
+                onClick={() => {
+                  setPreviewPath(path)
+                  setShowPathPreview(true)
+                }}
+              >
+                {/* Path Visual */}
+                <div className="aspect-video bg-muted relative overflow-hidden group-hover:shadow-inner">
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500/10 to-blue-500/5">
+                    <Route className="w-16 h-16 text-blue-500/40 group-hover:text-blue-500/60 transition-colors" />
+                  </div>
+                  
+                  {/* Status Dot */}
+                  <div className="absolute top-3 left-3">
+                    <div className={`w-2 h-2 rounded-full shadow-sm ${path.isActive ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} title={path.isActive ? 'Active' : 'Inactive'} />
+                  </div>
+
+                  {/* Action Buttons Overlay - Always visible on mobile */}
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                    <Button 
+                      variant="secondary" 
+                      size="icon"
+                      className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                      onClick={(e) => handleTogglePathActive(e, path.id, path.name, path.isActive)}
+                      title={path.isActive ? 'Deactivate' : 'Activate'}
+                    >
+                      <Power className={`w-4 h-4 ${path.isActive ? 'text-green-600' : 'text-gray-400'}`} />
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="icon"
+                      className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                      onClick={(e) => handleEditPath(e, path.id)}
+                      title="Edit"
+                    >
+                      <Edit className="w-4 h-4 text-blue-600" />
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="icon"
+                      className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-red-50"
+                      onClick={(e) => handleDeletePath(e, path.id, path.name)}
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Path Info */}
+                <CardContent className="p-3 md:p-4">
+                  <div className="mb-2">
+                    <h3 className="font-semibold text-base md:text-lg line-clamp-1 mb-1">{path.name}</h3>
+                    <div className="flex items-center gap-1.5 md:gap-2 flex-wrap mt-1">
+                      <Badge variant="secondary" className="text-xs px-1.5 py-0.5">Walkway</Badge>
+                    </div>
+                  </div>
+                  <p className="text-xs md:text-sm text-muted-foreground mb-2 md:mb-3 line-clamp-2 min-h-[2.5rem]">
+                    {path.description || 'No description available'}
+                  </p>
+                  <div className="flex gap-2 md:gap-3 text-xs text-muted-foreground flex-wrap">
+                    <span className="flex items-center gap-1 min-w-0">
+                      <Route className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">Path Route</span>
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Empty state */}
+          {paths.length === 0 && !isImportingPaths && (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Route className="w-16 h-16 text-muted-foreground/50 mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Paths Found</h3>
+                <p className="text-sm text-muted-foreground mb-4 text-center">
+                  Get started by importing paths from a GeoJSON file or create a new path manually
+                </p>
+                <div className="flex gap-2">
+                  <Button onClick={() => pathFileInputRef.current?.click()}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Import GeoJSON
+                  </Button>
+                  <Button variant="outline" onClick={handleAddPath}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Path
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Pagination */}
+          {pathTotalPages > 1 && (
+            <Card className="mt-6">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {((pathPage - 1) * PATHS_PER_PAGE) + 1} to {Math.min(pathPage * PATHS_PER_PAGE, totalPaths)} of {totalPaths} paths
+                  </p>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPathPage(prev => Math.max(1, prev - 1))}
+                      disabled={pathPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Previous
+                    </Button>
+                    
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, pathTotalPages) }, (_, i) => {
+                        let pageNum
+                        if (pathTotalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (pathPage <= 3) {
+                          pageNum = i + 1
+                        } else if (pathPage >= pathTotalPages - 2) {
+                          pageNum = pathTotalPages - 4 + i
+                        } else {
+                          pageNum = pathPage - 2 + i
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={pathPage === pageNum ? 'default' : 'outline'}
+                            size="sm"
+                            className="w-10"
+                            onClick={() => setPathPage(pageNum)}
+                          >
+                            {pageNum}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPathPage(prev => Math.min(pathTotalPages, prev + 1))}
+                      disabled={pathPage === pathTotalPages}
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
         {activeSection === 'boundaries' && (
@@ -2606,6 +3554,46 @@ export default function MapManagement() {
         onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
       />
 
+      {/* POI Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!poiToDelete}
+        title="Delete POI"
+        message={`Are you sure you want to delete "${poiToDelete?.name}"? This action cannot be undone.`}
+        variant="danger"
+        onConfirm={confirmDeletePOI}
+        onCancel={() => setPoiToDelete(null)}
+      />
+
+      {/* POI Toggle Active Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!poiToToggle}
+        title={poiToToggle?.isActive ? 'Deactivate POI' : 'Activate POI'}
+        message={`Are you sure you want to ${poiToToggle?.isActive ? 'deactivate' : 'activate'} "${poiToToggle?.name}"?`}
+        variant="warning"
+        onConfirm={confirmTogglePOIActive}
+        onCancel={() => setPoiToToggle(null)}
+      />
+
+      {/* Path Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!pathToDelete}
+        title="Delete Path"
+        message={`Are you sure you want to delete "${pathToDelete?.name}"? This action cannot be undone.`}
+        variant="danger"
+        onConfirm={confirmDeletePath}
+        onCancel={() => setPathToDelete(null)}
+      />
+
+      {/* Path Toggle Active Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!pathToToggle}
+        title={pathToToggle?.isActive ? 'Deactivate Path' : 'Activate Path'}
+        message={`Are you sure you want to ${pathToToggle?.isActive ? 'deactivate' : 'activate'} "${pathToToggle?.name}"?`}
+        variant="warning"
+        onConfirm={confirmTogglePathActive}
+        onCancel={() => setPathToToggle(null)}
+      />
+
       {/* Building Form */}
       {showBuildingForm && (
         <BuildingForm
@@ -2631,6 +3619,77 @@ export default function MapManagement() {
             setEditingOpenSpace(null)
           }}
           isLoading={isSubmittingOpenSpace}
+        />
+      )}
+
+      {/* POI Form */}
+      {showPOIForm && (
+        <POIForm
+          poi={editingPOI}
+          buildings={dropdownBuildings.map(b => ({ id: b.id, name: b.name }))}
+          openSpaces={dropdownOpenSpaces.map(os => ({ id: os.id, name: os.name }))}
+          onSubmit={handlePOIFormSubmit}
+          onCancel={() => {
+            setShowPOIForm(false)
+            setEditingPOI(null)
+          }}
+          isLoading={isSubmitting}
+        />
+      )}
+
+      {/* Path Form */}
+      {showPathForm && (
+        <PathForm
+          path={editingPath}
+          onSubmit={handlePathFormSubmit}
+          onCancel={() => {
+            setShowPathForm(false)
+            setEditingPath(null)
+          }}
+          isLoading={isSubmittingPath}
+        />
+      )}
+
+      {/* Path Preview */}
+      {showPathPreview && previewPath && (
+        <PathPreview
+          path={previewPath}
+          allPaths={paths}
+          buildings={buildings}
+          openSpaces={openSpaces}
+          campusId={selectedCampusId || undefined}
+          onClose={() => {
+            setShowPathPreview(false)
+            setPreviewPath(null)
+          }}
+          onDelete={(pathId, pathName) => {
+            setPathToDelete({ id: pathId, name: pathName })
+            setShowPathPreview(false)
+            setPreviewPath(null)
+          }}
+          onToggleActive={(pathId, pathName, isActive) => {
+            setPathToToggle({ id: pathId, name: pathName, isActive })
+            setShowPathPreview(false)
+            setPreviewPath(null)
+          }}
+        />
+      )}
+
+      {/* Map View - All Paths */}
+      {showMapView && (
+        <PathPreview
+          path={null}
+          allPaths={paths}
+          buildings={buildings}
+          openSpaces={openSpaces}
+          campusId={selectedCampusId || undefined}
+          onClose={() => setShowMapView(false)}
+          onDelete={(pathId, pathName) => {
+            setPathToDelete({ id: pathId, name: pathName })
+          }}
+          onToggleActive={(pathId, pathName, isActive) => {
+            setPathToToggle({ id: pathId, name: pathName, isActive })
+          }}
         />
       )}
     </div>
