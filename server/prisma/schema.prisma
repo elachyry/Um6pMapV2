@@ -162,6 +162,7 @@ model Campus {
   updatedAt DateTime @updatedAt
   
   buildings Buildings[]
+  openSpaces OpenSpace[]
   users     User[]
   userRoles UserRole[]
   events    Event[]
@@ -214,10 +215,57 @@ model Buildings {
   amenities    BuildingAmenity[]
   events       Event[]
   reservations Reservation[]
+  pois         POI[]
   
   @@unique([campusId, slug])
   @@index([campusId])
   @@index([categoryId])
+  @@index([isActive])
+}
+
+model OpenSpace {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String
+  description String?
+  campusId    String?
+  
+  // OpenSpace details
+  address     String?
+  coordinates String?    // JSON string: { lat, lng }
+  openSpaceType String   // "park", "plaza", "parking", "field", etc.
+  
+  // 3D Model Configuration
+  modelId          String? // Reference to BuildingModel (GLB repository)
+  modelScale       Float?  @default(1.0)
+  modelRotationX   Float?  @default(0.0)
+  modelRotationY   Float?  @default(0.0)
+  modelRotationZ   Float?  @default(0.0)
+  modelOffsetX     Float?  @default(0.0)
+  modelOffsetY     Float?  @default(0.0)
+  modelOffsetZ     Float?  @default(0.0)
+  
+  // Features
+  isReservable Boolean @default(false)
+  isActive     Boolean @default(true)
+  capacity     Int?
+  facilities   String? // JSON string: Array of facility names
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  campus       Campus?              @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  operatingHours OperatingHours[]
+  contactInfo  ContactInfo[]
+  images       OpenSpaceImage[]
+  documents    OpenSpaceDocument[]
+  amenities    OpenSpaceAmenity[]
+  events       Event[]
+  reservations Reservation[]
+  pois         POI[]
+  
+  @@unique([campusId, slug])
+  @@index([campusId])
   @@index([isActive])
 }
 
@@ -279,6 +327,12 @@ model POI {
   floor       Int?
   buildingRef String? // Reference to building if indoor
   
+  // Relations to parent entity (Building OR OpenSpace)
+  buildingId  String?
+  building    Buildings? @relation(fields: [buildingId], references: [id])
+  openSpaceId String?
+  openSpace   OpenSpace? @relation(fields: [openSpaceId], references: [id])
+  
   // Display
   icon     String?
   imageUrl String?
@@ -291,6 +345,8 @@ model POI {
   
   @@index([categoryId])
   @@index([isActive])
+  @@index([buildingId])
+  @@index([openSpaceId])
 }
 
 // Events
@@ -303,6 +359,7 @@ model Event {
   // Location
   campusId   String?
   buildingId String?
+  openSpaceId String?
   location   String? // Free text location
   
   // Timing
@@ -325,12 +382,14 @@ model Event {
   
   campus    Campus?    @relation(fields: [campusId], references: [id])
   building  Buildings? @relation(fields: [buildingId], references: [id])
+  openSpace OpenSpace? @relation(fields: [openSpaceId], references: [id])
   organizer User       @relation("EventCreator", fields: [organizerId], references: [id])
   sessions  EventSession[]
   media     EventMedia[]
   
   @@index([campusId])
   @@index([buildingId])
+  @@index([openSpaceId])
   @@index([organizerId])
   @@index([startDate])
   @@index([status])
@@ -377,9 +436,10 @@ model Reservation {
   status      String @default("PENDING")
   
   // Resource
-  resourceType String // "building" or "location"
+  resourceType String // "building", "location", "openSpace"
   buildingId   String?
   locationId   String?
+  openSpaceId  String?
   
   // Timing
   startDate DateTime
@@ -403,10 +463,12 @@ model Reservation {
   user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   building Buildings? @relation(fields: [buildingId], references: [id])
   location Location?  @relation(fields: [locationId], references: [id])
+  openSpace OpenSpace? @relation(fields: [openSpaceId], references: [id])
   
   @@index([userId])
   @@index([buildingId])
   @@index([locationId])
+  @@index([openSpaceId])
   @@index([status])
   @@index([startDate])
 }
@@ -532,14 +594,17 @@ model ContactInfo {
   isPrimary   Boolean  @default(false)
   buildingId  String?
   locationId  String?
+  openSpaceId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
   building Buildings? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   location Location?  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  openSpace OpenSpace? @relation(fields: [openSpaceId], references: [id], onDelete: Cascade)
   
   @@index([buildingId])
   @@index([locationId])
+  @@index([openSpaceId])
   @@index([type])
 }
 
@@ -553,14 +618,17 @@ model OperatingHours {
   is24Hours   Boolean  @default(false)
   buildingId  String?
   locationId  String?
+  openSpaceId String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
   building Buildings? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   location Location?  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  openSpace OpenSpace? @relation(fields: [openSpaceId], references: [id], onDelete: Cascade)
   
   @@index([buildingId])
   @@index([locationId])
+  @@index([openSpaceId])
   @@index([dayOfWeek])
 }
 
@@ -590,6 +658,7 @@ model Amenity {
   updatedAt   DateTime @updatedAt
   
   buildings BuildingAmenity[]
+  openSpaces OpenSpaceAmenity[]
   
   @@index([category])
   @@index([isCustom])
@@ -627,4 +696,53 @@ model LocationDocument {
   
   @@index([locationId])
   @@index([locationId, displayOrder])
+}
+
+// OpenSpace Images
+model OpenSpaceImage {
+  id           String   @id @default(uuid())
+  openSpaceId  String
+  imageUrl     String
+  caption      String?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  openSpace OpenSpace @relation(fields: [openSpaceId], references: [id], onDelete: Cascade)
+  
+  @@index([openSpaceId])
+  @@index([openSpaceId, displayOrder])
+}
+
+// OpenSpace Documents
+model OpenSpaceDocument {
+  id           String   @id @default(uuid())
+  openSpaceId  String
+  documentUrl  String
+  title        String
+  fileType     String
+  fileSize     Int?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  openSpace OpenSpace @relation(fields: [openSpaceId], references: [id], onDelete: Cascade)
+  
+  @@index([openSpaceId])
+  @@index([openSpaceId, displayOrder])
+}
+
+// OpenSpace Amenities
+model OpenSpaceAmenity {
+  id          String   @id @default(uuid())
+  openSpaceId String
+  amenityId   String
+  createdAt   DateTime @default(now())
+  
+  openSpace OpenSpace @relation(fields: [openSpaceId], references: [id], onDelete: Cascade)
+  amenity   Amenity   @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  
+  @@unique([openSpaceId, amenityId])
+  @@index([openSpaceId])
+  @@index([amenityId])
 }

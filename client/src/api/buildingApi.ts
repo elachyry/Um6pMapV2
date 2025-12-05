@@ -33,11 +33,12 @@ interface ApiResponse<T> {
 /**
  * Import buildings from GeoJSON file
  * Purpose: Upload and import GeoJSON file
- * Input: GeoJSON file or object
+ * Input: GeoJSON file or object, optional campusId
  * Output: Import results with statistics
  */
-export async function importBuildings(geojsonData: any): Promise<ImportResult> {
-  const response = await apiClient.post<ApiResponse<ImportResult>>('/buildings/import', geojsonData)
+export async function importBuildings(geojsonData: any, campusId?: string): Promise<ImportResult> {
+  const body = campusId ? { geojson: geojsonData, campusId } : geojsonData
+  const response = await apiClient.post<ApiResponse<ImportResult>>('/buildings/import', body)
   return response.data
 }
 

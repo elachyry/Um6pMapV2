@@ -33,10 +33,10 @@ interface ImportResult {
 /**
  * Import buildings from GeoJSON
  * Purpose: Process GeoJSON file and import buildings, detecting duplicates
- * Input: GeoJSON FeatureCollection
+ * Input: GeoJSON FeatureCollection, optional campusId
  * Output: Import statistics and details
  */
-export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection): Promise<ImportResult> {
+export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection, campusId?: string): Promise<ImportResult> {
   const result: ImportResult = {
     total: 0,
     imported: 0,
@@ -86,7 +86,8 @@ export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection): Prom
         slug: buildingName.toLowerCase().replace(/\s+/g, '-'),
         description: `Imported from GeoJSON (FID: ${feature.properties.fid || 'N/A'})`,
         coordinates: geometryString,
-        isActive: true
+        isActive: true,
+        ...(campusId && { campusId })
       })
 
       result.imported++

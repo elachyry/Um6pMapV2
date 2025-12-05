@@ -8,6 +8,8 @@ import { authRoutes } from './authRoutes'
 import { roleRoutes } from './roleRoutes'
 import { userRoutes } from './userRoutes'
 import buildingRoutes from './buildingRoutes'
+import locationRoutes from './locationRoutes'
+import openSpaceRoutes from './openSpaceRoutes'
 import { campusRoutes } from './campusRoutes'
 import uploadRoutes from './uploadRoutes'
 import categoryRoutes from './categoryRoutes'
@@ -98,8 +100,26 @@ export async function registerRoutes(fastify: FastifyInstance) {
       }
     })
     
+    instance.register(locationRoutes, { 
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(openSpaceRoutes, { 
+      prefix: '/open-spaces',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
     // TODO: Add more routes:
-    // instance.register(locationRoutes, { prefix: '/locations' })
     // instance.register(eventRoutes, { prefix: '/events' })
     // instance.register(reservationRoutes, { prefix: '/reservations' })
     // instance.register(accessRequestRoutes, { prefix: '/access-requests' })

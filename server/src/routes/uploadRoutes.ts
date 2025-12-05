@@ -29,6 +29,30 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
   // Reorder documents
   fastify.put('/buildings/:buildingId/documents/reorder', uploadController.reorderBuildingDocuments)
   
+  // Upload location image
+  fastify.post('/locations/:locationId/images', uploadController.uploadLocationImage)
+
+  // Upload location document
+  fastify.post('/locations/:locationId/documents', uploadController.uploadLocationDocument)
+
+  // Reorder location images
+  fastify.put('/locations/:locationId/images/reorder', uploadController.reorderLocationImages)
+
+  // Reorder location documents
+  fastify.put('/locations/:locationId/documents/reorder', uploadController.reorderLocationDocuments)
+  
+  // Upload open space image
+  fastify.post('/open-spaces/:openSpaceId/images', uploadController.uploadOpenSpaceImage)
+
+  // Upload open space document
+  fastify.post('/open-spaces/:openSpaceId/documents', uploadController.uploadOpenSpaceDocument)
+
+  // Reorder open space images
+  fastify.put('/open-spaces/:openSpaceId/images/reorder', uploadController.reorderOpenSpaceImages)
+
+  // Reorder open space documents
+  fastify.put('/open-spaces/:openSpaceId/documents/reorder', uploadController.reorderOpenSpaceDocuments)
+
   // Get campus 3D models
   fastify.get('/campuses/:campusId/models', uploadController.getCampusModels)
   

@@ -12,8 +12,13 @@ export async function importFromGeoJSON(
   reply: FastifyReply
 ) {
   try {
-    const geojson = request.body as any
-    const result = await buildingService.importFromGeoJSON(geojson)
+    const { geojson, campusId } = request.body
+    
+    // Support legacy format where body is just geojson
+    const data = geojson || request.body
+    const targetCampusId = campusId || request.body.campusId
+
+    const result = await buildingService.importFromGeoJSON(data, targetCampusId)
     
     return reply.status(200).send({
       success: true,

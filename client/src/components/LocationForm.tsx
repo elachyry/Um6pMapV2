@@ -1,13 +1,14 @@
 /**
  * LocationForm Component
  * Purpose: Form for creating and editing locations
- * Features: Mobile-responsive with dropdown tabs on mobile
+ * Features: Mobile-responsive with dropdown tabs on mobile, images and documents
  */
 
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, Trash2, GripVertical, Image as ImageIcon, FileText, Loader2 } from 'lucide-react'
 import { Button } from './ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/Card'
+import { Badge } from './ui/Badge'
 import { OperatingHoursEditor } from './OperatingHoursEditor'
 import { ContactInfoEditor } from './ContactInfoEditor'
 
@@ -24,6 +25,8 @@ interface LocationFormData {
   facilities: string[]
   operatingHours: any[]
   contactInfo: any[]
+  images: any[]
+  documents: any[]
 }
 
 interface LocationFormProps {
@@ -31,9 +34,10 @@ interface LocationFormProps {
   buildings: any[]
   onSubmit: (data: LocationFormData) => void
   onCancel: () => void
+  isLoading?: boolean
 }
 
-export default function LocationForm({ location, buildings, onSubmit, onCancel }: LocationFormProps) {
+export default function LocationForm({ location, buildings, onSubmit, onCancel, isLoading = false }: LocationFormProps) {
   const [activeTab, setActiveTab] = useState('basic')
   const [facilityInput, setFacilityInput] = useState('')
 
@@ -50,7 +54,12 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
     facilities: location?.facilities ? JSON.parse(location.facilities) : [],
     operatingHours: location?.operatingHours || [],
     contactInfo: location?.contactInfo || [],
+    images: location?.images || [],
+    documents: location?.documents || [],
   })
+
+  const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null)
+  const [draggedDocIndex, setDraggedDocIndex] = useState<number | null>(null)
 
   // Update formData when location prop changes
   useEffect(() => {
@@ -58,7 +67,7 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
       setFormData({
         name: location.name || '',
         buildingId: location.buildingId || '',
-        floor: location.floor || '',
+        floor: location.floor || 0,
         roomNumber: location.roomNumber || '',
         description: location.description || '',
         coordinates: location.coordinates || null,
@@ -68,6 +77,18 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
         facilities: location.facilities ? JSON.parse(location.facilities) : [],
         operatingHours: location.operatingHours || [],
         contactInfo: location.contactInfo || [],
+        images: location.images ? location.images.map((img: any) => ({
+          id: img.id,
+          url: img.imageUrl,
+          caption: img.caption || '',
+        })) : [],
+        documents: location.documents ? location.documents.map((doc: any) => ({
+          id: doc.id,
+          url: doc.documentUrl,
+          title: doc.title,
+          name: doc.title,
+          fileType: doc.fileType,
+        })) : [],
       })
     }
   }, [location])
@@ -94,10 +115,106 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
     })
   }
 
+  // Image upload handler
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    const newImages = Array.from(files).map((file) => ({
+      url: URL.createObjectURL(file),
+      file,
+      caption: '',
+    }))
+
+    setFormData({
+      ...formData,
+      images: [...formData.images, ...newImages],
+    })
+  }
+
+  // Document upload handler
+  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files) return
+
+    const newDocuments = Array.from(files).map((file) => ({
+      name: file.name,
+      file,
+      url: URL.createObjectURL(file),
+    }))
+
+    setFormData({
+      ...formData,
+      documents: [...formData.documents, ...newDocuments],
+    })
+  }
+
+  // Image drag handlers
+  const handleImageDragStart = (index: number) => {
+    setDraggedImageIndex(index)
+  }
+
+  const handleImageDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedImageIndex === null || draggedImageIndex === index) return
+
+    const newImages = [...formData.images]
+    const draggedImage = newImages[draggedImageIndex]
+    newImages.splice(draggedImageIndex, 1)
+    newImages.splice(index, 0, draggedImage)
+
+    setFormData({ ...formData, images: newImages })
+    setDraggedImageIndex(index)
+  }
+
+  const handleImageDragEnd = () => {
+    setDraggedImageIndex(null)
+  }
+
+  // Document drag handlers
+  const handleDocDragStart = (index: number) => {
+    setDraggedDocIndex(index)
+  }
+
+  const handleDocDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    if (draggedDocIndex === null || draggedDocIndex === index) return
+
+    const newDocs = [...formData.documents]
+    const draggedDoc = newDocs[draggedDocIndex]
+    newDocs.splice(draggedDocIndex, 1)
+    newDocs.splice(index, 0, draggedDoc)
+
+    setFormData({ ...formData, documents: newDocs })
+    setDraggedDocIndex(index)
+  }
+
+  const handleDocDragEnd = () => {
+    setDraggedDocIndex(null)
+  }
+
+  // Remove image
+  const removeImage = (index: number) => {
+    setFormData({
+      ...formData,
+      images: formData.images.filter((_, i) => i !== index)
+    })
+  }
+
+  // Remove document
+  const removeDocument = (index: number) => {
+    setFormData({
+      ...formData,
+      documents: formData.documents.filter((_, i) => i !== index)
+    })
+  }
+
   const tabs = [
     { id: 'basic', label: 'Basic Info' },
     { id: 'hours', label: 'Operating Hours' },
     { id: 'contact', label: 'Contact Info' },
+    { id: 'images', label: 'Images' },
+    { id: 'documents', label: 'Documents' },
   ]
 
   return (
@@ -332,15 +449,172 @@ export default function LocationForm({ location, buildings, onSubmit, onCancel }
                 />
               </div>
             )}
+
+            {/* Images Tab */}
+            {activeTab === 'images' && (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Location Images</label>
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <label htmlFor="image-upload" className="cursor-pointer">
+                      <ImageIcon className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        Click to upload or drag and drop images
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        PNG, JPG, GIF up to 10MB
+                      </p>
+                    </label>
+                  </div>
+                </div>
+
+                {formData.images.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {formData.images.map((image: any, index: number) => (
+                      <div
+                        key={index}
+                        draggable
+                        onDragStart={() => handleImageDragStart(index)}
+                        onDragOver={(e) => handleImageDragOver(e, index)}
+                        onDragEnd={handleImageDragEnd}
+                        className="relative group border rounded-lg overflow-hidden cursor-move hover:shadow-lg transition-shadow"
+                      >
+                        <div className="aspect-video bg-muted">
+                          <img
+                            src={image.url}
+                            alt={image.caption || `Image ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="p-2 bg-background">
+                          <input
+                            type="text"
+                            placeholder="Caption..."
+                            className="w-full text-xs px-2 py-1 border rounded"
+                            value={image.caption}
+                            onChange={(e) => {
+                              const newImages = [...formData.images]
+                              newImages[index].caption = e.target.value
+                              setFormData({ ...formData, images: newImages })
+                            }}
+                          />
+                        </div>
+                        <div className="absolute top-2 left-2 bg-black/50 text-white px-2 py-1 rounded text-xs">
+                          #{index + 1}
+                        </div>
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => removeImage(index)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <GripVertical className="w-5 h-5 text-white drop-shadow" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Documents Tab */}
+            {activeTab === 'documents' && (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Location Documents</label>
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleDocumentUpload}
+                      className="hidden"
+                      id="document-upload"
+                    />
+                    <label htmlFor="document-upload" className="cursor-pointer">
+                      <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        Click to upload or drag and drop documents
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        PDF, DOC, XLS up to 10MB
+                      </p>
+                    </label>
+                  </div>
+                </div>
+
+                {formData.documents.length > 0 && (
+                  <div className="space-y-2">
+                    {formData.documents.map((doc: any, index: number) => (
+                      <div
+                        key={index}
+                        draggable
+                        onDragStart={() => handleDocDragStart(index)}
+                        onDragOver={(e) => handleDocDragOver(e, index)}
+                        onDragEnd={handleDocDragEnd}
+                        className="flex items-center gap-3 p-3 border rounded-lg hover:shadow-md transition-shadow cursor-move group"
+                      >
+                        <GripVertical className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <FileText className="w-8 h-8 text-primary" />
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            className="w-full text-sm font-medium px-2 py-1 border rounded"
+                            placeholder="Document title..."
+                            value={doc.title || doc.name}
+                            onChange={(e) => {
+                              const newDocs = [...formData.documents]
+                              newDocs[index].title = e.target.value
+                              setFormData({ ...formData, documents: newDocs })
+                            }}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">{doc.name}</p>
+                        </div>
+                        <Badge variant="secondary">#{index + 1}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeDocument(index)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
 
           {/* Fixed Footer */}
           <div className="border-t p-4 sm:p-6 flex gap-2 flex-shrink-0 bg-background">
-            <Button type="button" variant="outline" onClick={onCancel} className="flex-1 sm:flex-none">
+            <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading} className="flex-1 sm:flex-none">
               Cancel
             </Button>
-            <Button type="submit" className="flex-1 sm:flex-none">
-              {location ? 'Update Location' : 'Create Location'}
+            <Button type="submit" disabled={isLoading} className="flex-1 sm:flex-none">
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {location ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                location ? 'Update Location' : 'Create Location'
+              )}
             </Button>
           </div>
         </form>

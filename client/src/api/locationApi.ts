@@ -8,10 +8,10 @@ import { apiClient } from './client'
 /**
  * Get all locations with pagination
  * Purpose: Fetch paginated list of locations
- * Input: page, limit, buildingId (optional)
+ * Input: page, limit, buildingId (optional), campusId (optional)
  * Output: Paginated locations
  */
-export async function getLocations(page = 1, limit = 12, buildingId?: string) {
+export async function getLocations(page = 1, limit = 12, buildingId?: string, campusId?: string) {
   const params = new URLSearchParams({
     page: page.toString(),
     limit: limit.toString(),
@@ -19,6 +19,10 @@ export async function getLocations(page = 1, limit = 12, buildingId?: string) {
   
   if (buildingId) {
     params.append('buildingId', buildingId)
+  }
+  
+  if (campusId) {
+    params.append('campusId', campusId)
   }
   
   return apiClient.get(`/locations?${params.toString()}`)

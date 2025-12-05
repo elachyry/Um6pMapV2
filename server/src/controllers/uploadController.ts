@@ -509,3 +509,433 @@ export async function updateCampusModel(
     })
   }
 }
+
+/**
+ * Upload location image
+ * Purpose: Upload image and save to LocationImage table
+ * Input: locationId, image file, caption (optional)
+ * Output: Image record with Cloudinary URL
+ */
+export async function uploadLocationImage(
+  request: FastifyRequest<{ Params: { locationId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { locationId } = request.params
+    
+    // Get multipart data
+    const data = await request.file()
+    
+    if (!data) {
+      return reply.status(400).send({
+        success: false,
+        error: 'No file provided'
+      })
+    }
+
+    // Get file buffer
+    const fileBuffer = await data.toBuffer()
+    
+    // Upload to Cloudinary
+    const uploadResult = await uploadService.uploadImage(fileBuffer, 'locations/images')
+    
+    // Get current max display order
+    const maxOrder = await (prisma as any).locationImage.findFirst({
+      where: { locationId },
+      orderBy: { displayOrder: 'desc' },
+      select: { displayOrder: true }
+    })
+    
+    // Save to database
+    const caption = data.fields.caption ? String((data.fields.caption as any).value || '') : ''
+    const image = await (prisma as any).locationImage.create({
+      data: {
+        locationId,
+        imageUrl: uploadResult.url,
+        caption,
+        displayOrder: (maxOrder?.displayOrder || 0) + 1,
+      }
+    })
+
+    return reply.status(201).send({
+      success: true,
+      data: image
+    })
+  } catch (error: any) {
+    console.error('Error uploading location image:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to upload image'
+    })
+  }
+}
+
+/**
+ * Upload location document
+ * Purpose: Upload document and save to LocationDocument table
+ * Input: locationId, document file, title
+ * Output: Document record with Cloudinary URL
+ */
+export async function uploadLocationDocument(
+  request: FastifyRequest<{ Params: { locationId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { locationId } = request.params
+    
+    // Get multipart data
+    const data = await request.file()
+    
+    if (!data) {
+      return reply.status(400).send({
+        success: false,
+        error: 'No file provided'
+      })
+    }
+
+    // Get file buffer
+    const fileBuffer = await data.toBuffer()
+    
+    // Upload to Cloudinary
+    const uploadResult = await uploadService.uploadDocument(
+      fileBuffer,
+      'locations/documents',
+      data.filename
+    )
+    
+    // Get file extension from filename as fallback
+    const getFileType = () => {
+      if (uploadResult.format) return uploadResult.format
+      const match = data.filename.match(/\.([^.]+)$/)
+      return match ? match[1].toLowerCase() : 'unknown'
+    }
+    
+    // Get current max display order
+    const maxOrder = await (prisma as any).locationDocument.findFirst({
+      where: { locationId },
+      orderBy: { displayOrder: 'desc' },
+      select: { displayOrder: true }
+    })
+    
+    // Save to database
+    const title = data.fields.title ? String((data.fields.title as any).value || data.filename) : data.filename
+    const document = await (prisma as any).locationDocument.create({
+      data: {
+        locationId,
+        documentUrl: uploadResult.url,
+        title: title,
+        fileType: getFileType(),
+        fileSize: uploadResult.size,
+        displayOrder: (maxOrder?.displayOrder || 0) + 1,
+      }
+    })
+
+    return reply.status(201).send({
+      success: true,
+      data: document
+    })
+  } catch (error: any) {
+    console.error('Error uploading location document:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to upload document'
+    })
+  }
+}
+
+/**
+ * Reorder location images
+ * Purpose: Update display order of images
+ * Input: locationId, array of {id, displayOrder}
+ * Output: Success message
+ */
+export async function reorderLocationImages(
+  request: FastifyRequest<{ 
+    Params: { locationId: string }
+    Body: { images: Array<{ id: string; displayOrder: number }> }
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const { images } = request.body
+    
+    // Update each image's display order
+    await Promise.all(
+      images.map(img =>
+        (prisma as any).locationImage.update({
+          where: { id: img.id },
+          data: { displayOrder: img.displayOrder }
+        })
+      )
+    )
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Images reordered successfully'
+    })
+  } catch (error: any) {
+    console.error('Error reordering images:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to reorder images'
+    })
+  }
+}
+
+/**
+ * Reorder location documents
+ * Purpose: Update display order of documents
+ * Input: locationId, array of {id, displayOrder}
+ * Output: Success message
+ */
+export async function reorderLocationDocuments(
+  request: FastifyRequest<{ 
+    Params: { locationId: string }
+    Body: { documents: Array<{ id: string; displayOrder: number }> }
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const { documents } = request.body
+    
+    // Update each document's display order
+    await Promise.all(
+      documents.map(doc =>
+        (prisma as any).locationDocument.update({
+          where: { id: doc.id },
+          data: { displayOrder: doc.displayOrder }
+        })
+      )
+    )
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Documents reordered successfully'
+    })
+  } catch (error: any) {
+    console.error('Error reordering documents:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to reorder documents'
+    })
+  }
+}
+
+/**
+ * Upload open space image
+ * Purpose: Upload image and save to OpenSpaceImage table
+ * Input: openSpaceId, image file, caption (optional)
+ * Output: Image record with Cloudinary URL
+ */
+export async function uploadOpenSpaceImage(
+  request: FastifyRequest<{ Params: { openSpaceId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { openSpaceId } = request.params
+    
+    // Get multipart data
+    const data = await request.file()
+    
+    if (!data) {
+      return reply.status(400).send({
+        success: false,
+        error: 'No file provided'
+      })
+    }
+
+    // Get file buffer
+    const fileBuffer = await data.toBuffer()
+    
+    // Upload to Cloudinary
+    const uploadResult = await uploadService.uploadImage(fileBuffer, 'open-spaces/images')
+    
+    // Get current max display order
+    const maxOrder = await (prisma as any).openSpaceImage.findFirst({
+      where: { openSpaceId },
+      orderBy: { displayOrder: 'desc' },
+      select: { displayOrder: true }
+    })
+    
+    // Save to database
+    const caption = data.fields.caption ? String((data.fields.caption as any).value || '') : ''
+    const image = await (prisma as any).openSpaceImage.create({
+      data: {
+        openSpaceId,
+        imageUrl: uploadResult.url,
+        caption,
+        displayOrder: (maxOrder?.displayOrder || 0) + 1,
+      }
+    })
+
+    return reply.status(201).send({
+      success: true,
+      data: image
+    })
+  } catch (error: any) {
+    console.error('Error uploading open space image:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to upload image'
+    })
+  }
+}
+
+/**
+ * Upload open space document
+ * Purpose: Upload document and save to OpenSpaceDocument table
+ * Input: openSpaceId, document file, title
+ * Output: Document record with Cloudinary URL
+ */
+export async function uploadOpenSpaceDocument(
+  request: FastifyRequest<{ Params: { openSpaceId: string } }>,
+  reply: FastifyReply
+) {
+  try {
+    const { openSpaceId } = request.params
+    
+    // Get multipart data
+    const data = await request.file()
+    
+    if (!data) {
+      return reply.status(400).send({
+        success: false,
+        error: 'No file provided'
+      })
+    }
+
+    // Get file buffer
+    const fileBuffer = await data.toBuffer()
+    
+    // Upload to Cloudinary
+    const uploadResult = await uploadService.uploadDocument(
+      fileBuffer,
+      'open-spaces/documents',
+      data.filename
+    )
+    
+    // Get file extension from filename as fallback
+    const getFileType = () => {
+      if (uploadResult.format) return uploadResult.format
+      const match = data.filename.match(/\.([^.]+)$/)
+      return match ? match[1].toLowerCase() : 'unknown'
+    }
+    
+    // Get current max display order
+    const maxOrder = await (prisma as any).openSpaceDocument.findFirst({
+      where: { openSpaceId },
+      orderBy: { displayOrder: 'desc' },
+      select: { displayOrder: true }
+    })
+    
+    // Save to database
+    const title = data.fields.title ? String((data.fields.title as any).value || data.filename) : data.filename
+    const document = await (prisma as any).openSpaceDocument.create({
+      data: {
+        openSpaceId,
+        documentUrl: uploadResult.url,
+        title: title,
+        fileType: getFileType(),
+        fileSize: uploadResult.size,
+        displayOrder: (maxOrder?.displayOrder || 0) + 1,
+      }
+    })
+
+    return reply.status(201).send({
+      success: true,
+      data: document
+    })
+  } catch (error: any) {
+    console.error('Error uploading open space document:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to upload document'
+    })
+  }
+}
+
+/**
+ * Reorder open space images
+ * Purpose: Update display order of images
+ * Input: openSpaceId, array of {id, displayOrder}
+ * Output: Success message
+ */
+export async function reorderOpenSpaceImages(
+  request: FastifyRequest<{ 
+    Params: { openSpaceId: string }
+    Body: { images: Array<{ id: string; displayOrder: number }> }
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const { images } = request.body
+    
+    // Update each image's display order
+    await Promise.all(
+      images.map(img =>
+        (prisma as any).openSpaceImage.update({
+          where: { id: img.id },
+          data: { displayOrder: img.displayOrder }
+        })
+      )
+    )
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Images reordered successfully'
+    })
+  } catch (error: any) {
+    console.error('Error reordering images:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to reorder images'
+    })
+  }
+}
+
+/**
+ * Reorder open space documents
+ * Purpose: Update display order of documents
+ * Input: openSpaceId, array of {id, displayOrder}
+ * Output: Success message
+ */
+export async function reorderOpenSpaceDocuments(
+  request: FastifyRequest<{ 
+    Params: { openSpaceId: string }
+    Body: { documents: Array<{ id: string; displayOrder: number }> }
+  }>,
+  reply: FastifyReply
+) {
+  try {
+    const { documents } = request.body
+    
+    // Update each document's display order
+    await Promise.all(
+      documents.map(doc =>
+        (prisma as any).openSpaceDocument.update({
+          where: { id: doc.id },
+          data: { displayOrder: doc.displayOrder }
+        })
+      )
+    )
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Documents reordered successfully'
+    })
+  } catch (error: any) {
+    console.error('Error reordering documents:', error)
+    request.log.error(error)
+    return reply.status(500).send({
+      success: false,
+      error: error.message || 'Failed to reorder documents'
+    })
+  }
+}
