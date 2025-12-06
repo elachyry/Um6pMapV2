@@ -39,9 +39,9 @@ class ApiClient {
   ): Promise<T> {
     const headers: Record<string, string> = {}
 
-    // Only set Content-Type for non-FormData requests
+    // Only set Content-Type for non-FormData requests with body
     // FormData will automatically set multipart/form-data with boundary
-    if (!(options.body instanceof FormData)) {
+    if (options.body && !(options.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json'
     }
 

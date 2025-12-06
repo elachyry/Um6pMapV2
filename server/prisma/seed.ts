@@ -7,6 +7,7 @@ import { prisma } from '../src/config/database'
 import seedCampuses from './seeds/campuses'
 import { seedRolesAndPermissions } from './seeds/roles'
 import seedAmenities from './seeds/amenities'
+import { seedSuperAdmin } from './seeds/superAdmin'
 
 async function main() {
   console.log('🌱 Starting database seeding...')
@@ -15,8 +16,11 @@ async function main() {
     // Seed campuses
     await seedCampuses()
     
-    // Seed roles and permissions
+    // Seed roles and permissions (must run before super admin)
     await seedRolesAndPermissions()
+    
+    // Seed super admin (only if user table is empty)
+    await seedSuperAdmin()
     
     // Seed amenities
     await seedAmenities()

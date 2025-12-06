@@ -169,6 +169,7 @@ model Campus {
   models    BuildingModel[]
   pois      POI[]
   paths     Path[]
+  boundaries Boundary[]
   
   @@index([slug])
   @@index([isActive])
@@ -363,6 +364,28 @@ model Path {
   
   // Location
   coordinates String    // JSON string: LineString GeoJSON
+  campusId    String?
+  campus      Campus?   @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  // Display
+  isActive Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([campusId])
+  @@index([isActive])
+}
+
+// Campus Boundaries
+model Boundary {
+  id          String  @id @default(uuid())
+  name        String
+  slug        String  @unique
+  description String?
+  
+  // Location
+  coordinates String    // JSON string: Polygon GeoJSON
   campusId    String?
   campus      Campus?   @relation(fields: [campusId], references: [id], onDelete: Cascade)
   

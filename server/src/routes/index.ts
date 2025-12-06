@@ -15,6 +15,7 @@ import uploadRoutes from './uploadRoutes'
 import categoryRoutes from './categoryRoutes'
 import poiRoutes from './poiRoutes'
 import pathRoutes from './pathRoutes'
+import boundaryRoutes from './boundaryRoutes'
 
 export async function registerRoutes(fastify: FastifyInstance) {
   // API prefix
@@ -132,6 +133,15 @@ export async function registerRoutes(fastify: FastifyInstance) {
     })
     
     instance.register(pathRoutes, { 
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(boundaryRoutes, { 
       config: {
         rateLimit: {
           max: 100,

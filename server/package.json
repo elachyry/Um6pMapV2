@@ -11,6 +11,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
+    "init-super-admin": "tsx scripts/init-super-admin.ts",
+    "get-campus-ids": "tsx scripts/get-campus-ids.ts",
+    "test-boundary": "tsx scripts/test-boundary-import.ts",
+    "seed": "tsx prisma/seed.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },

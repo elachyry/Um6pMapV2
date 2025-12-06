@@ -13,6 +13,7 @@ import { OpenSpaceForm } from '@/components/OpenSpaceForm'
 import { POIForm } from '@/components/POIForm'
 import { PathForm } from '@/components/PathForm'
 import { PathPreview } from '@/components/PathPreview'
+import { BoundaryForm } from '@/components/BoundaryForm'
 import { useToast } from '@/hooks/useToast'
 import { useCampusStore } from '@/stores/campusStore'
 import { useNavigationStore } from '@/stores/navigationStore'
@@ -21,6 +22,7 @@ import { getLocations, createLocation, updateLocation, deleteLocation, toggleLoc
 import { importOpenSpaces, getOpenSpaces, deleteOpenSpace, toggleOpenSpaceActive, createOpenSpace, getOpenSpaceById, ImportResult as OpenSpaceImportResult } from '@/api/openSpaceApi'
 import { getPOIs, importPOIs, deletePOI, togglePOIActive, getPOIById, createPOI, updatePOI, ImportResult as POIImportResult } from '@/api/poiApi'
 import { getAllPaths, importPaths, deletePath, togglePathActive, getPathById, createPath, updatePath, ImportResult as PathImportResult } from '@/api/pathApi'
+import { importBoundaries, getAllBoundaries, getBoundaryById, createBoundary, updateBoundary, deleteBoundary, toggleBoundaryActive, ImportResult as BoundaryImportResult } from '@/api/boundaryApi'
 import { getActiveCampuses } from '@/api/campusApi'
 import { getAllCategories } from '@/api/categoryApi'
 import { uploadBuildingImage, uploadBuildingDocument, reorderBuildingImages, reorderBuildingDocuments, uploadLocationImage, uploadLocationDocument, reorderLocationImages, reorderLocationDocuments, uploadOpenSpaceImage, uploadOpenSpaceDocument, reorderOpenSpaceImages, reorderOpenSpaceDocuments } from '@/api/uploadApi'
@@ -143,6 +145,23 @@ export default function MapManagement() {
   const [showPathPreview, setShowPathPreview] = useState(false)
   const [previewPath, setPreviewPath] = useState<any | null>(null)
   const [showMapView, setShowMapView] = useState(false)
+
+  // Boundary state
+  const [isImportingBoundaries, setIsImportingBoundaries] = useState(false)
+  const [boundaryImportResult, setBoundaryImportResult] = useState<BoundaryImportResult | null>(null)
+  const boundaryFileInputRef = useRef<HTMLInputElement>(null)
+  const [boundaries, setBoundaries] = useState<any[]>([])
+  const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false)
+  const [boundaryPage, setBoundaryPage] = useState(1)
+  const [boundaryTotalPages, setBoundaryTotalPages] = useState(1)
+  const [totalBoundaries, setTotalBoundaries] = useState(0)
+  const [boundarySearchQuery, setBoundarySearchQuery] = useState('')
+  const [boundaryToDelete, setBoundaryToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [boundaryToToggle, setBoundaryToToggle] = useState<{ id: string; name: string; isActive: boolean } | null>(null)
+  const [showBoundaryForm, setShowBoundaryForm] = useState(false)
+  const [editingBoundary, setEditingBoundary] = useState<any | null>(null)
+  const [isSubmittingBoundary, setIsSubmittingBoundary] = useState(false)
+  const BOUNDARIES_PER_PAGE = 12
 
   /**
    * Fetch buildings from API
@@ -429,6 +448,15 @@ export default function MapManagement() {
   }, [activeSection, pathPage, selectedCampusId, pathSearchQuery])
 
   /**
+   * Effect to fetch boundaries when section, page, or campus changes
+   */
+  useEffect(() => {
+    if (activeSection === 'boundaries' && selectedCampusId) {
+      fetchBoundaries()
+    }
+  }, [activeSection, boundaryPage, selectedCampusId, boundarySearchQuery])
+
+  /**
    * Handle path import
    * Purpose: Import paths from GeoJSON file
    */
@@ -569,6 +597,134 @@ export default function MapManagement() {
       toast.error(error.message || 'Failed to save path')
     } finally {
       setIsSubmittingPath(false)
+    }
+  }
+
+  /**
+   * Fetch boundaries
+   * Purpose: Load boundaries with pagination filtered by campus
+   */
+  const fetchBoundaries = async () => {
+    if (!selectedCampusId) return
+    setIsLoadingBoundaries(true)
+    try {
+      const response = await getAllBoundaries(boundaryPage, BOUNDARIES_PER_PAGE, boundarySearchQuery, selectedCampusId)
+      setBoundaries(response.data || [])
+      setBoundaryTotalPages(response.pagination?.totalPages || 1)
+      setTotalBoundaries(response.pagination?.total || 0)
+    } catch (error) {
+      console.error('Failed to load boundaries:', error)
+      toast.error('Failed to load boundaries')
+    } finally {
+      setIsLoadingBoundaries(false)
+    }
+  }
+
+  /**
+   * Handle delete boundary
+   * Purpose: Show confirmation dialog before deleting
+   */
+  const handleDeleteBoundary = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation()
+    setBoundaryToDelete({ id, name })
+  }
+
+  /**
+   * Confirm delete boundary
+   * Purpose: Delete boundary after confirmation
+   */
+  const confirmDeleteBoundary = async () => {
+    if (!boundaryToDelete) return
+    try {
+      await deleteBoundary(boundaryToDelete.id)
+      toast.success(`Boundary "${boundaryToDelete.name}" deleted successfully`)
+      setBoundaryToDelete(null)
+      await fetchBoundaries()
+    } catch (error: any) {
+      console.error('Failed to delete boundary:', error)
+      toast.error(error.message || 'Failed to delete boundary')
+    }
+  }
+
+  /**
+   * Handle toggle boundary activation
+   * Purpose: Show confirmation dialog before toggling
+   */
+  const handleToggleBoundaryActivation = (e: React.MouseEvent, id: string, name: string, isActive: boolean) => {
+    e.stopPropagation()
+    setBoundaryToToggle({ id, name, isActive })
+  }
+
+  /**
+   * Confirm toggle boundary activation
+   * Purpose: Toggle boundary active status after confirmation
+   */
+  const confirmToggleBoundaryActivation = async () => {
+    if (!boundaryToToggle) return
+    try {
+      await toggleBoundaryActive(boundaryToToggle.id)
+      const action = boundaryToToggle.isActive ? 'deactivated' : 'activated'
+      toast.success(`Boundary "${boundaryToToggle.name}" ${action} successfully`)
+      setBoundaryToToggle(null)
+      await fetchBoundaries()
+    } catch (error: any) {
+      console.error('Failed to toggle boundary:', error)
+      toast.error(error.message || 'Failed to toggle boundary status')
+    }
+  }
+
+  /**
+   * Handle add boundary
+   * Purpose: Open form for new boundary creation
+   */
+  const handleAddBoundary = () => {
+    setEditingBoundary(null)
+    setShowBoundaryForm(true)
+  }
+
+  /**
+   * Handle edit boundary
+   * Purpose: Open form to edit existing boundary
+   */
+  const handleEditBoundary = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const boundary = await getBoundaryById(id)
+      setEditingBoundary(boundary)
+      setShowBoundaryForm(true)
+    } catch (error: any) {
+      console.error('Failed to fetch boundary:', error)
+      toast.error('Failed to load boundary data')
+    }
+  }
+
+  /**
+   * Handle boundary form submit
+   * Purpose: Create or update boundary with automatically selected campus
+   */
+  const handleBoundaryFormSubmit = async (data: any) => {
+    setIsSubmittingBoundary(true)
+    try {
+      const boundaryData = {
+        ...data,
+        campusId: selectedCampusId,
+      }
+      
+      if (editingBoundary) {
+        await updateBoundary(editingBoundary.id, boundaryData)
+        toast.success('Boundary updated successfully')
+      } else {
+        await createBoundary(boundaryData)
+        toast.success('Boundary created successfully')
+      }
+      setShowBoundaryForm(false)
+      setEditingBoundary(null)
+      await fetchBoundaries()
+    } catch (error: any) {
+      console.error('Failed to save boundary:', error)
+      toast.error(error.message || 'Failed to save boundary')
+    } finally {
+      setIsSubmittingBoundary(false)
     }
   }
 
@@ -1601,6 +1757,8 @@ export default function MapManagement() {
                         poiFileInputRef.current?.click()
                       } else if (activeSection === 'paths') {
                         pathFileInputRef.current?.click()
+                      } else if (activeSection === 'boundaries') {
+                        boundaryFileInputRef.current?.click()
                       }
                     }}
                     disabled={
@@ -1608,6 +1766,7 @@ export default function MapManagement() {
                       activeSection === 'open-spaces' ? isImportingOpenSpaces : 
                       activeSection === 'poi' ? isImportingPOIs : 
                       activeSection === 'paths' ? isImportingPaths : 
+                      activeSection === 'boundaries' ? isImportingBoundaries :
                       false
                     }
                     size="sm"
@@ -1619,6 +1778,7 @@ export default function MapManagement() {
                        activeSection === 'open-spaces' && isImportingOpenSpaces ? 'Importing...' : 
                        activeSection === 'poi' && isImportingPOIs ? 'Importing...' :
                        activeSection === 'paths' && isImportingPaths ? 'Importing...' :
+                       activeSection === 'boundaries' && isImportingBoundaries ? 'Importing...' :
                        'Import'}
                     </span>
                     <span className="xs:hidden">Import</span>
@@ -1638,6 +1798,8 @@ export default function MapManagement() {
                     handleAddPOI()
                   } else if (activeSection === 'paths') {
                     handleAddPath()
+                  } else if (activeSection === 'boundaries') {
+                    handleAddBoundary()
                   }
                 }} 
                 size="sm" 
@@ -3160,15 +3322,328 @@ export default function MapManagement() {
       )}
 
         {activeSection === 'boundaries' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Campus Boundaries</CardTitle>
-            <CardDescription>Define campus and zone boundaries</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Boundary management content coming soon...</p>
-          </CardContent>
-        </Card>
+        <>
+          {/* Hidden file input for boundary import */}
+          <input
+            ref={boundaryFileInputRef}
+            type="file"
+            accept=".json,.geojson"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              
+              if (!selectedCampusId) {
+                toast.error('Please select a campus first')
+                return
+              }
+
+              // Validate file type
+              if (!file.name.endsWith('.json') && !file.name.endsWith('.geojson')) {
+                toast.error('Please select a valid GeoJSON file (.json or .geojson)')
+                return
+              }
+
+              setIsImportingBoundaries(true)
+              setBoundaryImportResult(null)
+
+              try {
+                // Read file content
+                const fileContent = await file.text()
+                const geojsonData = JSON.parse(fileContent)
+
+                // Validate GeoJSON structure
+                if (geojsonData.type !== 'FeatureCollection' || !Array.isArray(geojsonData.features)) {
+                  throw new Error('Invalid GeoJSON format. Expected a FeatureCollection.')
+                }
+
+                // Import boundaries
+                const result = await importBoundaries(geojsonData, selectedCampusId)
+                setBoundaryImportResult(result)
+                toast.success(`Successfully imported ${result.imported} boundaries`)
+
+                // Refresh boundaries list
+                await fetchBoundaries()
+
+                // Reset file input
+                if (boundaryFileInputRef.current) {
+                  boundaryFileInputRef.current.value = ''
+                }
+              } catch (error: any) {
+                console.error('Import error:', error)
+                toast.error(error.message || 'Failed to import boundaries')
+              } finally {
+                setIsImportingBoundaries(false)
+              }
+            }}
+            className="hidden"
+          />
+
+          {/* Import Result */}
+          {boundaryImportResult && (
+            <Card className="border-green-200 bg-green-50 mb-4">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-green-900 mb-2">Import Successful!</h3>
+                    <div className="grid grid-cols-4 gap-4 mb-3">
+                      <div>
+                        <p className="text-xs text-green-700">Total</p>
+                        <p className="text-2xl font-bold text-green-900">{boundaryImportResult.total}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-green-700">Imported</p>
+                        <p className="text-2xl font-bold text-green-900">{boundaryImportResult.imported}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-green-700">Duplicates</p>
+                        <p className="text-2xl font-bold text-yellow-700">{boundaryImportResult.duplicates}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-green-700">Errors</p>
+                        <p className="text-2xl font-bold text-red-700">{boundaryImportResult.errors}</p>
+                      </div>
+                    </div>
+                    
+                    {boundaryImportResult.details.imported.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-sm font-medium text-green-900 mb-1">Imported Boundaries:</p>
+                        <p className="text-xs text-green-700">{boundaryImportResult.details.imported.join(', ')}</p>
+                      </div>
+                    )}
+                    
+                    {boundaryImportResult.details.duplicates.length > 0 && (
+                      <div className="mb-2">
+                        <p className="text-sm font-medium text-yellow-900 mb-1">Skipped (Duplicates):</p>
+                        <p className="text-xs text-yellow-700">{boundaryImportResult.details.duplicates.join(', ')}</p>
+                      </div>
+                    )}
+                    
+                    {boundaryImportResult.details.errors.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium text-red-900 mb-1">Errors:</p>
+                        <div className="text-xs text-red-700 space-y-1">
+                          {boundaryImportResult.details.errors.map((err, idx) => (
+                            <p key={idx}>{err.name}: {err.error}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setBoundaryImportResult(null)}
+                    className="text-green-600 hover:text-green-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Search Bar */}
+          <Card className="mb-3 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search boundaries..."
+                    value={boundarySearchQuery}
+                    onChange={(e) => {
+                      setBoundarySearchQuery(e.target.value)
+                      setBoundaryPage(1)
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+                {boundarySearchQuery && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setBoundarySearchQuery('')
+                      setBoundaryPage(1)
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {!isLoadingBoundaries && boundaries.length > 0 && (
+                <p className="text-sm text-muted-foreground mt-3">
+                  Showing {boundaries.length} of {totalBoundaries} boundaries
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Boundaries Grid */}
+          {isLoadingBoundaries ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading boundaries...</p>
+              </div>
+            </div>
+          ) : boundaries.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Octagon className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No boundaries found</h3>
+                  <p className="text-muted-foreground mb-4">Import boundaries from GeoJSON to get started</p>
+                  <Button onClick={() => boundaryFileInputRef.current?.click()}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Import Boundaries
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Boundaries Cards Grid */}
+              <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {boundaries.map((boundary: any) => (
+                  <Card 
+                    key={boundary.id} 
+                    className="overflow-hidden hover:shadow-lg transition-all group"
+                  >
+                    {/* Boundary Visual */}
+                    <div className="aspect-video bg-muted relative overflow-hidden">
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-500/10 to-purple-500/5">
+                        <Octagon className="w-16 h-16 text-purple-500/40 group-hover:text-purple-500/60 transition-colors" />
+                      </div>
+                      
+                      {/* Status Dot */}
+                      <div className="absolute top-3 left-3">
+                        <div className={`w-2 h-2 rounded-full shadow-sm ${boundary.isActive ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} title={boundary.isActive ? 'Active' : 'Inactive'} />
+                      </div>
+
+                      {/* Action Buttons Overlay */}
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                          onClick={(e) => handleToggleBoundaryActivation(e, boundary.id, boundary.name, boundary.isActive)}
+                          title={boundary.isActive ? 'Deactivate' : 'Activate'}
+                        >
+                          <Power className={`w-4 h-4 ${boundary.isActive ? 'text-green-600' : 'text-gray-400'}`} />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                          onClick={(e) => handleEditBoundary(e, boundary.id)}
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-red-50"
+                          onClick={(e) => handleDeleteBoundary(e, boundary.id, boundary.name)}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Boundary Info */}
+                    <CardContent className="p-3 md:p-4">
+                      <div className="mb-2">
+                        <h3 className="font-semibold text-base md:text-lg line-clamp-1 mb-1">{boundary.name}</h3>
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0.5">{boundary.slug}</Badge>
+                      </div>
+                      <p className="text-xs md:text-sm text-muted-foreground mb-2 md:mb-3 line-clamp-2 min-h-[2.5rem]">
+                        {boundary.description || 'No description available'}
+                      </p>
+                      <div className="flex gap-2 md:gap-3 text-xs text-muted-foreground flex-wrap">
+                        {boundary.campus && (
+                          <span className="flex items-center gap-1 min-w-0">
+                            <MapPin className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{boundary.campus.name}</span>
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <Octagon className="w-3 h-3 flex-shrink-0" />
+                          Polygon
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {boundaryTotalPages > 1 && (
+                <Card className="mt-6">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {((boundaryPage - 1) * BOUNDARIES_PER_PAGE) + 1} to {Math.min(boundaryPage * BOUNDARIES_PER_PAGE, totalBoundaries)} of {totalBoundaries} boundaries
+                      </p>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBoundaryPage(prev => Math.max(1, prev - 1))}
+                          disabled={boundaryPage === 1}
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Previous
+                        </Button>
+                        
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, boundaryTotalPages) }, (_, i) => {
+                            let pageNum
+                            if (boundaryTotalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (boundaryPage <= 3) {
+                              pageNum = i + 1
+                            } else if (boundaryPage >= boundaryTotalPages - 2) {
+                              pageNum = boundaryTotalPages - 4 + i
+                            } else {
+                              pageNum = boundaryPage - 2 + i
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={boundaryPage === pageNum ? 'default' : 'outline'}
+                                size="sm"
+                                className="w-10"
+                                onClick={() => setBoundaryPage(pageNum)}
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBoundaryPage(prev => Math.min(boundaryTotalPages, prev + 1))}
+                          disabled={boundaryPage === boundaryTotalPages}
+                        >
+                          Next
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </>
       )}
 
         
@@ -3594,6 +4069,26 @@ export default function MapManagement() {
         onCancel={() => setPathToToggle(null)}
       />
 
+      {/* Boundary Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!boundaryToDelete}
+        title="Delete Boundary"
+        message={`Are you sure you want to delete "${boundaryToDelete?.name}"? This action cannot be undone.`}
+        variant="danger"
+        onConfirm={confirmDeleteBoundary}
+        onCancel={() => setBoundaryToDelete(null)}
+      />
+
+      {/* Boundary Toggle Active Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!boundaryToToggle}
+        title={boundaryToToggle?.isActive ? 'Deactivate Boundary' : 'Activate Boundary'}
+        message={`Are you sure you want to ${boundaryToToggle?.isActive ? 'deactivate' : 'activate'} "${boundaryToToggle?.name}"?`}
+        variant="warning"
+        onConfirm={confirmToggleBoundaryActivation}
+        onCancel={() => setBoundaryToToggle(null)}
+      />
+
       {/* Building Form */}
       {showBuildingForm && (
         <BuildingForm
@@ -3647,6 +4142,19 @@ export default function MapManagement() {
             setEditingPath(null)
           }}
           isLoading={isSubmittingPath}
+        />
+      )}
+
+      {/* Boundary Form */}
+      {showBoundaryForm && (
+        <BoundaryForm
+          boundary={editingBoundary}
+          onSubmit={handleBoundaryFormSubmit}
+          onCancel={() => {
+            setShowBoundaryForm(false)
+            setEditingBoundary(null)
+          }}
+          isLoading={isSubmittingBoundary}
         />
       )}
 

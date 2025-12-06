@@ -4,6 +4,7 @@
  */
 
 import * as pathRepository from '../repositories/pathRepository'
+import { prisma } from '../config/database'
 
 interface GeoJSONFeature {
   type: 'Feature'
@@ -56,6 +57,14 @@ export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection, campu
 
   if (!geojson || geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
     throw new Error('Invalid GeoJSON format. Expected FeatureCollection.')
+  }
+
+  // Validate campus exists if campusId is provided
+  if (campusId) {
+    const campus = await prisma.campus.findUnique({ where: { id: campusId } })
+    if (!campus) {
+      throw new Error(`Campus with ID ${campusId} not found`)
+    }
   }
 
   result.total = geojson.features.length

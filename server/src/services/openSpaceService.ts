@@ -182,6 +182,14 @@ export const importFromGeoJSON = async (campusId: string, geojson: any) => {
     throw new Error('Invalid GeoJSON format')
   }
 
+  // Validate campus exists
+  if (campusId) {
+    const campus = await prisma.campus.findUnique({ where: { id: campusId } })
+    if (!campus) {
+      throw new Error(`Campus with ID ${campusId} not found`)
+    }
+  }
+
   result.total = geojson.features.length
 
   for (const feature of geojson.features) {
