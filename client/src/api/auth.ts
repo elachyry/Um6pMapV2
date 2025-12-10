@@ -39,6 +39,7 @@ export interface User {
   avatar?: string
   phone?: string
   department?: string
+  mustChangePassword?: boolean
 }
 
 export const authApi = {

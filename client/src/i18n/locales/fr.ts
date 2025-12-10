@@ -291,6 +291,6 @@ export default {
     "rejected": "Rejeté",
     "status": "Statut",
     "actions": "Actions",
-    "copyright": "© 2024 UM6P Admin"
+    "copyright": "© 2025 UM6P"
   }
 }

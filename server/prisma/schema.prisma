@@ -27,6 +27,7 @@ model User {
   phone     String?
   avatar    String?
   department String?
+  userCategory String? // STUDENT or STAFF
   
   userType  String   @default("PERMANENT")
   status    String @default("ACTIVE")
@@ -40,8 +41,13 @@ model User {
   loginAttempts Int      @default(0)
   lockedUntil   DateTime?
   lastLoginAt   DateTime?
+  mustChangePassword Boolean @default(false) // Force password change on next login
   refreshToken  String?   // JWT refresh token
   refreshTokenExpiry DateTime? // Refresh token expiration
+  
+  // Email verification
+  verificationToken       String?   @unique
+  verificationTokenExpiry DateTime?
   
   // Relations
   campusId String?
@@ -146,15 +152,17 @@ model Campus {
   minZoom            Float?   @default(10.0) // Minimum zoom level allowed
   maxZoom            Float?   @default(22.0) // Maximum zoom level allowed
   
-  // Map Layer Visibility
-  showBuildings      Boolean  @default(true)  // Show/hide building polygons
-  showPaths          Boolean  @default(true)  // Show/hide walkways and paths
-  showBoundaries     Boolean  @default(true)  // Show/hide campus boundaries
-  showParkingLots    Boolean  @default(true)  // Show/hide parking areas
-  showOpenSpaces     Boolean  @default(true)  // Show/hide green spaces, plazas
-  showPOIs           Boolean  @default(true)  // Show/hide points of interest markers
-  showLabels         Boolean  @default(true)  // Show/hide building/location labels
-  showGLBModels      Boolean  @default(false) // Show/hide 3D GLB models
+  // Map Display Settings - Buildings
+  showBuildingLabels3D      Boolean  @default(true)  // Show labels for buildings with 3D models
+  showBuildingLabelsNo3D    Boolean  @default(true)  // Show labels for buildings without 3D models
+  showBuildingIcons3D       Boolean  @default(true)  // Show icons for buildings with 3D models
+  showBuildingIconsNo3D     Boolean  @default(true)  // Show icons for buildings without 3D models
+  
+  // Map Display Settings - Open Spaces
+  showOpenSpaceLabels3D     Boolean  @default(true)  // Show labels for open spaces with 3D models
+  showOpenSpaceLabelsNo3D   Boolean  @default(true)  // Show labels for open spaces without 3D models
+  showOpenSpaceIcons3D      Boolean  @default(true)  // Show icons for open spaces with 3D models
+  showOpenSpaceIconsNo3D    Boolean  @default(true)  // Show icons for open spaces without 3D models
   
   isActive    Boolean  @default(true)
   
@@ -170,6 +178,7 @@ model Campus {
   pois      POI[]
   paths     Path[]
   boundaries Boundary[]
+  emergencyContacts EmergencyContact[]
   
   @@index([slug])
   @@index([isActive])
@@ -232,6 +241,7 @@ model OpenSpace {
   slug        String
   description String?
   campusId    String?
+  categoryId  String?
   
   // OpenSpace details
   address     String?
@@ -258,6 +268,7 @@ model OpenSpace {
   updatedAt DateTime @updatedAt
   
   campus       Campus?              @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  category     Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   operatingHours OperatingHours[]
   contactInfo  ContactInfo[]
   images       OpenSpaceImage[]
@@ -269,6 +280,7 @@ model OpenSpace {
   
   @@unique([campusId, slug])
   @@index([campusId])
+  @@index([categoryId])
   @@index([isActive])
 }
 
@@ -279,14 +291,17 @@ model Category {
   description String?
   icon        String?
   color       String?
+  type        String   @default("building") // "building" or "open_space"
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
   buildings Buildings[]
   pois      POI[]
+  openSpaces OpenSpace[]
   
   @@index([slug])
+  @@index([type])
 }
 
 // Locations & POIs
@@ -795,4 +810,26 @@ model OpenSpaceAmenity {
   @@unique([openSpaceId, amenityId])
   @@index([openSpaceId])
   @@index([amenityId])
+}
+
+// Emergency Contact Model
+model EmergencyContact {
+  id          String   @id @default(uuid())
+  name        String
+  title       String
+  department  String?
+  phone       String
+  email       String?
+  description String?
+  isActive    Boolean  @default(true)
+  displayOrder Int     @default(0)
+  campusId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  campus Campus @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  
+  @@index([campusId])
+  @@index([isActive])
+  @@index([displayOrder])
 }

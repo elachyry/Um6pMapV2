@@ -1,6 +1,6 @@
 /**
  * Protected Route Component
- * Purpose: Protect routes from unauthenticated users
+ * Purpose: Protect routes from unauthenticated users and enforce password change
  */
 
 import { useEffect } from 'react'
@@ -8,7 +8,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, loadUser } = useAuthStore()
+  const { isAuthenticated, isLoading, loadUser, user } = useAuthStore()
   const location = useLocation()
 
   useEffect(() => {
@@ -28,6 +28,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Check if user must change password (except on change-password page itself)
+  if (user?.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
   }
 
   return <>{children}</>

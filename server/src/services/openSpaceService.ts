@@ -37,6 +37,9 @@ export const getById = async (id: string) => {
  * Output: Created open space
  */
 export const create = async (data: any) => {
+  console.log('OpenSpace Service - Create received data:', data)
+  console.log('CategoryId from data:', data.categoryId)
+  
   const { operatingHours, contactInfo, images, documents, accessibility, amenities, ...rest } = data
 
   // Generate slug from name
@@ -50,6 +53,7 @@ export const create = async (data: any) => {
     slug,
     description: rest.description,
     campusId: rest.campusId,
+    categoryId: rest.categoryId ? rest.categoryId : null,
     address: rest.address,
     coordinates: rest.coordinates,
     openSpaceType: rest.openSpaceType,
@@ -68,6 +72,9 @@ export const create = async (data: any) => {
     modelOffsetZ: rest.modelOffsetZ || 0.0,
   }
 
+  console.log('OpenSpace Service - Data being sent to repository:', openSpaceData)
+  console.log('CategoryId in openSpaceData:', openSpaceData.categoryId)
+  
   const openSpace = await openSpaceRepository.create(openSpaceData)
 
   if (operatingHours && Array.isArray(operatingHours)) {
@@ -93,6 +100,7 @@ export const create = async (data: any) => {
  */
 export const update = async (id: string, data: any) => {
   console.log('OpenSpace Service - Update received data:', data)
+  console.log('CategoryId from data:', data.categoryId)
   console.log('Contact Info:', data.contactInfo)
   console.log('Amenities:', data.amenities)
   console.log('Operating Hours:', data.operatingHours)
@@ -105,6 +113,10 @@ export const update = async (id: string, data: any) => {
   // Only include fields that are provided
   if (openSpaceData.name !== undefined) updateData.name = openSpaceData.name
   if (openSpaceData.description !== undefined) updateData.description = openSpaceData.description
+  if (openSpaceData.categoryId !== undefined) {
+    updateData.categoryId = openSpaceData.categoryId ? openSpaceData.categoryId : null
+    console.log('Setting categoryId in updateData:', updateData.categoryId)
+  }
   if (openSpaceData.address !== undefined) updateData.address = openSpaceData.address
   if (openSpaceData.coordinates !== undefined) updateData.coordinates = openSpaceData.coordinates
   if (openSpaceData.openSpaceType !== undefined) updateData.openSpaceType = openSpaceData.openSpaceType
@@ -121,6 +133,9 @@ export const update = async (id: string, data: any) => {
   if (openSpaceData.modelOffsetY !== undefined) updateData.modelOffsetY = openSpaceData.modelOffsetY
   if (openSpaceData.modelOffsetZ !== undefined) updateData.modelOffsetZ = openSpaceData.modelOffsetZ
 
+  console.log('OpenSpace Service - Final updateData being sent to repository:', updateData)
+  console.log('CategoryId in final updateData:', updateData.categoryId)
+  
   const openSpace = await openSpaceRepository.update(id, updateData)
 
   if (operatingHours && Array.isArray(operatingHours)) {

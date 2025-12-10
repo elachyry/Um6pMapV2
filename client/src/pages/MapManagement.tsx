@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useSidebar } from '@/components/Layout'
-import { Map, Building2, Layers, FolderTree, Plus, MapPin, Route, Octagon, Trees, Tag, Phone, Settings, LayoutDashboard, FileDown, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, Edit, Power, X, Search, Clock } from 'lucide-react'
+import { Map, Building2, Layers, FolderTree, Plus, MapPin, Route, Octagon, Trees, Tag, Phone, Settings, LayoutDashboard, FileDown, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, Edit, Power, X, Search, Clock, Mail } from 'lucide-react'
 import StatCard from '@/components/StatCard'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -14,18 +14,23 @@ import { POIForm } from '@/components/POIForm'
 import { PathForm } from '@/components/PathForm'
 import { PathPreview } from '@/components/PathPreview'
 import { BoundaryForm } from '@/components/BoundaryForm'
+import { MapPreview } from '@/components/MapPreview'
+import { EmergencyContactForm } from '@/components/EmergencyContactForm'
+import { CategoryForm } from '@/components/CategoryForm'
 import { useToast } from '@/hooks/useToast'
 import { useCampusStore } from '@/stores/campusStore'
 import { useNavigationStore } from '@/stores/navigationStore'
 import { importBuildings, getAllBuildings, getBuildingById, deleteBuilding, updateBuilding, createBuilding, ImportResult } from '@/api/buildingApi'
 import { getLocations, createLocation, updateLocation, deleteLocation, toggleLocationReservable } from '@/api/locationApi'
-import { importOpenSpaces, getOpenSpaces, deleteOpenSpace, toggleOpenSpaceActive, createOpenSpace, getOpenSpaceById, ImportResult as OpenSpaceImportResult } from '@/api/openSpaceApi'
+import { importOpenSpaces, getOpenSpaces, deleteOpenSpace, toggleOpenSpaceActive, createOpenSpace, updateOpenSpace, getOpenSpaceById, ImportResult as OpenSpaceImportResult } from '@/api/openSpaceApi'
 import { getPOIs, importPOIs, deletePOI, togglePOIActive, getPOIById, createPOI, updatePOI, ImportResult as POIImportResult } from '@/api/poiApi'
 import { getAllPaths, importPaths, deletePath, togglePathActive, getPathById, createPath, updatePath, ImportResult as PathImportResult } from '@/api/pathApi'
 import { importBoundaries, getAllBoundaries, getBoundaryById, createBoundary, updateBoundary, deleteBoundary, toggleBoundaryActive, ImportResult as BoundaryImportResult } from '@/api/boundaryApi'
+import { getAllEmergencyContacts, getEmergencyContactById, createEmergencyContact, updateEmergencyContact, deleteEmergencyContact, toggleEmergencyContactActive } from '@/api/emergencyContactApi'
 import { getActiveCampuses } from '@/api/campusApi'
-import { getAllCategories } from '@/api/categoryApi'
+import { getAllCategories, getCategoryById, createCategory, updateCategory, deleteCategory } from '@/api/categoryApi'
 import { uploadBuildingImage, uploadBuildingDocument, reorderBuildingImages, reorderBuildingDocuments, uploadLocationImage, uploadLocationDocument, reorderLocationImages, reorderLocationDocuments, uploadOpenSpaceImage, uploadOpenSpaceDocument, reorderOpenSpaceImages, reorderOpenSpaceDocuments } from '@/api/uploadApi'
+import { broadcastCacheInvalidation } from '@/api/cacheApi'
 import MapSettings from './MapSettings'
 
 type SectionType = 'overview' | 'buildings' | 'locations' | 'poi' | 'paths' | 'boundaries' | 'open-spaces' | 'categories' | 'emergency' | 'settings'
@@ -163,6 +168,126 @@ export default function MapManagement() {
   const [isSubmittingBoundary, setIsSubmittingBoundary] = useState(false)
   const BOUNDARIES_PER_PAGE = 12
 
+  // Overview stats state
+  const [overviewStats, setOverviewStats] = useState({
+    buildings: 0,
+    locations: 0,
+    pois: 0,
+    categories: 0,
+    paths: 0,
+    boundaries: 0,
+    openSpaces: 0,
+    models: 0
+  })
+  const [isLoadingOverview, setIsLoadingOverview] = useState(false)
+  const [showMapPreview, setShowMapPreview] = useState(false)
+  const [isLoadingMapData, setIsLoadingMapData] = useState(false)
+
+  // Emergency contact state
+  const [emergencyContacts, setEmergencyContacts] = useState<any[]>([])
+  const [isLoadingEmergencyContacts, setIsLoadingEmergencyContacts] = useState(false)
+  const [emergencyContactPage, setEmergencyContactPage] = useState(1)
+  const [emergencyContactTotalPages, setEmergencyContactTotalPages] = useState(1)
+  const [totalEmergencyContacts, setTotalEmergencyContacts] = useState(0)
+  const [emergencyContactSearchQuery, setEmergencyContactSearchQuery] = useState('')
+  const [emergencyContactToDelete, setEmergencyContactToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [emergencyContactToToggle, setEmergencyContactToToggle] = useState<{ id: string; name: string; isActive: boolean } | null>(null)
+  const [showEmergencyContactForm, setShowEmergencyContactForm] = useState(false)
+  const [editingEmergencyContact, setEditingEmergencyContact] = useState<any | null>(null)
+  const [isSubmittingEmergencyContact, setIsSubmittingEmergencyContact] = useState(false)
+  const EMERGENCY_CONTACTS_PER_PAGE = 12
+
+  // Category state (categories already declared at line 114)
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false)
+  const [categoryPage, setCategoryPage] = useState(1)
+  const [categoryTotalPages, setCategoryTotalPages] = useState(1)
+  const [totalCategories, setTotalCategories] = useState(0)
+  const [categorySearchQuery, setCategorySearchQuery] = useState('')
+  const [categoryType, setCategoryType] = useState<'building' | 'open_space'>('building') // NEW: Filter by type
+  const [categoryToDelete, setCategoryToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [showCategoryForm, setShowCategoryForm] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<any | null>(null)
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState(false)
+  const CATEGORIES_PER_PAGE = 12
+
+  /**
+   * Fetch all map data for preview
+   * Purpose: Load all buildings, paths, and open spaces for map preview
+   */
+  const fetchAllMapData = async () => {
+    if (!selectedCampusId) return
+    
+    setIsLoadingMapData(true)
+    try {
+      // Fetch all data with high limit to get everything
+      const [buildingsRes, pathsRes, openSpacesRes] = await Promise.all([
+        getAllBuildings(1, 1000, '', selectedCampusId),
+        getAllPaths(1, 1000, '', selectedCampusId),
+        getOpenSpaces(1, 1000, '', selectedCampusId)
+      ])
+
+      // Update the state with fetched data
+      setBuildings(buildingsRes.data || [])
+      setPaths(pathsRes.data || [])
+      setOpenSpaces((openSpacesRes as any).data || [])
+    } catch (error) {
+      console.error('Failed to fetch map data:', error)
+      toast.error('Failed to load map data')
+    } finally {
+      setIsLoadingMapData(false)
+    }
+  }
+
+  /**
+   * Handle open map preview
+   * Purpose: Fetch all data and open map preview
+   */
+  const handleOpenMapPreview = async () => {
+    await fetchAllMapData()
+    setShowMapPreview(true)
+  }
+
+  /**
+   * Fetch overview stats
+   * Purpose: Load counts for all data types for overview dashboard
+   */
+  const fetchOverviewStats = async () => {
+    if (!selectedCampusId) return
+    setIsLoadingOverview(true)
+    try {
+      // Fetch all data with limit 1 just to get total counts
+      const [buildingsRes, locationsRes, poisRes, categoriesRes, pathsRes, boundariesRes, openSpacesRes] = await Promise.all([
+        getAllBuildings(1, 1, '', selectedCampusId),
+        getLocations(1, 1, '', selectedCampusId),
+        getPOIs(1, 1, selectedCampusId, ''),
+        getAllCategories(),
+        getAllPaths(1, 1, '', selectedCampusId),
+        getAllBoundaries(1, 1, '', selectedCampusId),
+        getOpenSpaces(1, 1, '', selectedCampusId)
+      ])
+
+      // Count models from buildings that have modelId
+      const allBuildings = await getAllBuildings(1, 1000, '', selectedCampusId)
+      const modelsCount = allBuildings.data?.filter((b: any) => b.modelId).length || 0
+
+      setOverviewStats({
+        buildings: buildingsRes.pagination?.total || 0,
+        locations: (locationsRes as any).pagination?.total || 0,
+        pois: (poisRes as any).pagination?.total || 0,
+        categories: Array.isArray(categoriesRes) ? categoriesRes.length : 0,
+        paths: pathsRes.pagination?.total || 0,
+        boundaries: boundariesRes.pagination?.total || 0,
+        openSpaces: (openSpacesRes as any).pagination?.total || 0,
+        models: modelsCount
+      })
+    } catch (error) {
+      console.error('Failed to fetch overview stats:', error)
+      toast.error('Failed to load overview statistics')
+    } finally {
+      setIsLoadingOverview(false)
+    }
+  }
+
   /**
    * Fetch buildings from API
    * Purpose: Load buildings with pagination filtered by campus
@@ -244,7 +369,8 @@ export default function MapManagement() {
     
     const fetchCategories = async () => {
       try {
-        const response: any = await getAllCategories()
+        // Fetch all categories without pagination for forms (limit=100 to get all)
+        const response: any = await getAllCategories(1, 100)
         setCategories(response.data || [])
       } catch (error: any) {
         console.error('Failed to fetch categories:', error)
@@ -328,6 +454,7 @@ export default function MapManagement() {
     try {
       await togglePOIActive(poiToToggle.id)
       toast.success(`${poiToToggle.name} ${poiToToggle.isActive ? 'deactivated' : 'activated'} successfully`)
+      await broadcastCacheInvalidation('poi', selectedCampusId || undefined)
       setPoiToToggle(null)
       await loadPOIs()
     } catch (error: any) {
@@ -355,6 +482,7 @@ export default function MapManagement() {
     try {
       await deletePOI(poiToDelete.id)
       toast.success(`${poiToDelete.name} deleted successfully`)
+      await broadcastCacheInvalidation('poi', selectedCampusId || undefined)
       setPoiToDelete(null)
       await loadPOIs()
     } catch (error: any) {
@@ -411,6 +539,7 @@ export default function MapManagement() {
         await createPOI(sanitizedData)
         toast.success('POI created successfully')
       }
+      await broadcastCacheInvalidation('poi', selectedCampusId || undefined)
       setShowPOIForm(false)
       setEditingPOI(null)
       await loadPOIs()
@@ -455,6 +584,33 @@ export default function MapManagement() {
       fetchBoundaries()
     }
   }, [activeSection, boundaryPage, selectedCampusId, boundarySearchQuery])
+
+  /**
+   * Effect to fetch overview stats when overview section is active
+   */
+  useEffect(() => {
+    if (activeSection === 'overview' && selectedCampusId) {
+      fetchOverviewStats()
+    }
+  }, [activeSection, selectedCampusId])
+
+  /**
+   * Effect to fetch emergency contacts when section changes
+   */
+  useEffect(() => {
+    if (activeSection === 'emergency' && selectedCampusId) {
+      fetchEmergencyContacts()
+    }
+  }, [activeSection, emergencyContactPage, selectedCampusId, emergencyContactSearchQuery])
+
+  /**
+   * Effect to fetch categories when section changes
+   */
+  useEffect(() => {
+    if (activeSection === 'categories') {
+      fetchCategories()
+    }
+  }, [activeSection, categoryPage, categorySearchQuery, categoryType])
 
   /**
    * Handle path import
@@ -510,6 +666,7 @@ export default function MapManagement() {
     try {
       await togglePathActive(pathToToggle.id)
       toast.success(`${pathToToggle.name} ${pathToToggle.isActive ? 'deactivated' : 'activated'} successfully`)
+      await broadcastCacheInvalidation('path', selectedCampusId || undefined)
       setPathToToggle(null)
       await loadPaths()
     } catch (error: any) {
@@ -537,6 +694,7 @@ export default function MapManagement() {
     try {
       await deletePath(pathToDelete.id)
       toast.success(`${pathToDelete.name} deleted successfully`)
+      await broadcastCacheInvalidation('path', selectedCampusId || undefined)
       setPathToDelete(null)
       await loadPaths()
     } catch (error: any) {
@@ -589,6 +747,7 @@ export default function MapManagement() {
         await createPath(pathData)
         toast.success('Path created successfully')
       }
+      await broadcastCacheInvalidation('path', selectedCampusId || undefined)
       setShowPathForm(false)
       setEditingPath(null)
       await loadPaths()
@@ -638,6 +797,7 @@ export default function MapManagement() {
     try {
       await deleteBoundary(boundaryToDelete.id)
       toast.success(`Boundary "${boundaryToDelete.name}" deleted successfully`)
+      await broadcastCacheInvalidation('boundary', selectedCampusId || undefined)
       setBoundaryToDelete(null)
       await fetchBoundaries()
     } catch (error: any) {
@@ -665,6 +825,7 @@ export default function MapManagement() {
       await toggleBoundaryActive(boundaryToToggle.id)
       const action = boundaryToToggle.isActive ? 'deactivated' : 'activated'
       toast.success(`Boundary "${boundaryToToggle.name}" ${action} successfully`)
+      await broadcastCacheInvalidation('boundary', selectedCampusId || undefined)
       setBoundaryToToggle(null)
       await fetchBoundaries()
     } catch (error: any) {
@@ -717,6 +878,7 @@ export default function MapManagement() {
         await createBoundary(boundaryData)
         toast.success('Boundary created successfully')
       }
+      await broadcastCacheInvalidation('boundary', selectedCampusId || undefined)
       setShowBoundaryForm(false)
       setEditingBoundary(null)
       await fetchBoundaries()
@@ -725,6 +887,234 @@ export default function MapManagement() {
       toast.error(error.message || 'Failed to save boundary')
     } finally {
       setIsSubmittingBoundary(false)
+    }
+  }
+
+  /**
+   * Fetch emergency contacts
+   * Purpose: Load emergency contacts with pagination filtered by campus
+   */
+  const fetchEmergencyContacts = async () => {
+    if (!selectedCampusId) return
+    setIsLoadingEmergencyContacts(true)
+    try {
+      const response = await getAllEmergencyContacts(emergencyContactPage, EMERGENCY_CONTACTS_PER_PAGE, emergencyContactSearchQuery, selectedCampusId)
+      setEmergencyContacts(response.data || [])
+      setEmergencyContactTotalPages(response.pagination?.totalPages || 1)
+      setTotalEmergencyContacts(response.pagination?.total || 0)
+    } catch (error) {
+      console.error('Failed to load emergency contacts:', error)
+      toast.error('Failed to load emergency contacts')
+    } finally {
+      setIsLoadingEmergencyContacts(false)
+    }
+  }
+
+  /**
+   * Handle add emergency contact
+   * Purpose: Open form for new emergency contact creation
+   */
+  const handleAddEmergencyContact = () => {
+    setEditingEmergencyContact(null)
+    setShowEmergencyContactForm(true)
+  }
+
+  /**
+   * Handle edit emergency contact
+   * Purpose: Open form to edit existing emergency contact
+   */
+  const handleEditEmergencyContact = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const contact = await getEmergencyContactById(id)
+      setEditingEmergencyContact(contact)
+      setShowEmergencyContactForm(true)
+    } catch (error: any) {
+      console.error('Failed to fetch emergency contact:', error)
+      toast.error('Failed to load emergency contact data')
+    }
+  }
+
+  /**
+   * Handle emergency contact form submit
+   * Purpose: Create or update emergency contact with automatically selected campus
+   */
+  const handleEmergencyContactFormSubmit = async (data: any) => {
+    setIsSubmittingEmergencyContact(true)
+    try {
+      const contactData = {
+        ...data,
+        campusId: selectedCampusId,
+      }
+      
+      if (editingEmergencyContact) {
+        await updateEmergencyContact(editingEmergencyContact.id, contactData)
+        toast.success('Emergency contact updated successfully')
+      } else {
+        await createEmergencyContact(contactData)
+        toast.success('Emergency contact created successfully')
+      }
+      await broadcastCacheInvalidation('emergencyContact', selectedCampusId || undefined)
+      setShowEmergencyContactForm(false)
+      setEditingEmergencyContact(null)
+      await fetchEmergencyContacts()
+    } catch (error: any) {
+      console.error('Failed to save emergency contact:', error)
+      toast.error(error.message || 'Failed to save emergency contact')
+    } finally {
+      setIsSubmittingEmergencyContact(false)
+    }
+  }
+
+  /**
+   * Handle delete emergency contact
+   * Purpose: Show confirmation dialog before deleting
+   */
+  const handleDeleteEmergencyContact = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation()
+    setEmergencyContactToDelete({ id, name })
+  }
+
+  /**
+   * Confirm delete emergency contact
+   * Purpose: Delete emergency contact after confirmation
+   */
+  const confirmDeleteEmergencyContact = async () => {
+    if (!emergencyContactToDelete) return
+    try {
+      await deleteEmergencyContact(emergencyContactToDelete.id)
+      toast.success(`Emergency contact "${emergencyContactToDelete.name}" deleted successfully`)
+      await broadcastCacheInvalidation('emergencyContact', selectedCampusId || undefined)
+      setEmergencyContactToDelete(null)
+      await fetchEmergencyContacts()
+    } catch (error: any) {
+      console.error('Failed to delete emergency contact:', error)
+      toast.error(error.message || 'Failed to delete emergency contact')
+    }
+  }
+
+  /**
+   * Handle toggle emergency contact activation
+   * Purpose: Show confirmation dialog before toggling
+   */
+  const handleToggleEmergencyContactActivation = (e: React.MouseEvent, id: string, name: string, isActive: boolean) => {
+    e.stopPropagation()
+    setEmergencyContactToToggle({ id, name, isActive })
+  }
+
+  /**
+   * Confirm toggle emergency contact activation
+   * Purpose: Toggle emergency contact active status after confirmation
+   */
+  const confirmToggleEmergencyContactActivation = async () => {
+    if (!emergencyContactToToggle) return
+    try {
+      await toggleEmergencyContactActive(emergencyContactToToggle.id)
+      const action = emergencyContactToToggle.isActive ? 'deactivated' : 'activated'
+      toast.success(`Emergency contact "${emergencyContactToToggle.name}" ${action} successfully`)
+      await broadcastCacheInvalidation('emergencyContact', selectedCampusId || undefined)
+      setEmergencyContactToToggle(null)
+      await fetchEmergencyContacts()
+    } catch (error: any) {
+      console.error('Failed to toggle emergency contact:', error)
+      toast.error(error.message || 'Failed to toggle emergency contact status')
+    }
+  }
+
+  /**
+   * Fetch categories
+   * Purpose: Load all categories with pagination
+   */
+  const fetchCategories = async () => {
+    setIsLoadingCategories(true)
+    try {
+      const response = await getAllCategories(categoryPage, CATEGORIES_PER_PAGE, categorySearchQuery, categoryType)
+      setCategories((response as any).data || [])
+      setCategoryTotalPages((response as any).pagination?.totalPages || 1)
+      setTotalCategories((response as any).pagination?.total || 0)
+    } catch (error) {
+      console.error('Failed to fetch categories:', error)
+      toast.error('Failed to load categories')
+    } finally {
+      setIsLoadingCategories(false)
+    }
+  }
+
+  /**
+   * Handle add category
+   * Purpose: Open form for new category creation
+   */
+  const handleAddCategory = () => {
+    setEditingCategory(null)
+    setShowCategoryForm(true)
+  }
+
+  /**
+   * Handle edit category
+   * Purpose: Open form to edit existing category
+   */
+  const handleEditCategory = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    try {
+      const category = await getCategoryById(id)
+      setEditingCategory(category)
+      setShowCategoryForm(true)
+    } catch (error: any) {
+      console.error('Failed to fetch category:', error)
+      toast.error('Failed to load category data')
+    }
+  }
+
+  /**
+   * Handle category form submit
+   * Purpose: Create or update category
+   */
+  const handleCategoryFormSubmit = async (data: any) => {
+    setIsSubmittingCategory(true)
+    try {
+      if (editingCategory) {
+        await updateCategory(editingCategory.id, data)
+        toast.success('Category updated successfully')
+      } else {
+        await createCategory(data)
+        toast.success('Category created successfully')
+      }
+      await broadcastCacheInvalidation('category')
+      setShowCategoryForm(false)
+      setEditingCategory(null)
+      await fetchCategories()
+    } catch (error: any) {
+      console.error('Failed to save category:', error)
+      toast.error(error.message || 'Failed to save category')
+    } finally {
+      setIsSubmittingCategory(false)
+    }
+  }
+
+  /**
+   * Handle delete category
+   * Purpose: Show confirmation dialog before deleting
+   */
+  const handleDeleteCategory = (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation()
+    setCategoryToDelete({ id, name })
+  }
+
+  /**
+   * Confirm delete category
+   * Purpose: Delete category after confirmation
+   */
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return
+    try {
+      await deleteCategory(categoryToDelete.id)
+      toast.success(`Category "${categoryToDelete.name}" deleted successfully`)
+      await broadcastCacheInvalidation('category')
+      setCategoryToDelete(null)
+      await fetchCategories()
+    } catch (error: any) {
+      console.error('Failed to delete category:', error)
+      toast.error(error.message || 'Failed to delete category')
     }
   }
 
@@ -768,9 +1158,13 @@ export default function MapManagement() {
         setIsLoadingBuildings(true)
         try {
           await deleteBuilding(buildingId)
+          toast.success('Building deleted successfully')
+          
+          // Broadcast cache invalidation via WebSocket
+          await broadcastCacheInvalidation('building', selectedCampusId || undefined)
+          
           await fetchBuildings()
           setConfirmDialog({ ...confirmDialog, isOpen: false })
-          toast.success('Building deleted successfully')
         } catch (error: any) {
           console.error('Failed to delete building:', error)
           toast.error(error.message || 'Failed to delete building')
@@ -825,9 +1219,13 @@ export default function MapManagement() {
         setIsLoadingBuildings(true)
         try {
           await updateBuilding(buildingId, { isActive: !currentStatus })
+          toast.success(`Building ${currentStatus ? 'deactivated' : 'activated'} successfully`)
+          
+          // Broadcast cache invalidation via WebSocket
+          await broadcastCacheInvalidation('building', selectedCampusId || undefined)
+          
           await fetchBuildings()
           setConfirmDialog({ ...confirmDialog, isOpen: false })
-          toast.success(`Building ${currentStatus ? 'deactivated' : 'activated'} successfully`)
         } catch (error: any) {
           console.error('Failed to toggle activation:', error)
           toast.error(error.message || 'Failed to update building status')
@@ -1014,6 +1412,11 @@ export default function MapManagement() {
         )
       }
       
+      // Broadcast cache invalidation via WebSocket
+      console.log('🔔 Broadcasting cache invalidation for building')
+      await broadcastCacheInvalidation('building', selectedCampusId || undefined)
+      console.log('✅ Cache invalidation broadcast sent')
+      
       setShowBuildingForm(false)
       setEditingBuilding(null)
       await fetchBuildings()
@@ -1145,6 +1548,7 @@ export default function MapManagement() {
         try {
           await deleteLocation(id)
           toast.success('Location deleted successfully')
+          await broadcastCacheInvalidation('location', selectedCampusId || undefined)
           loadLocations()
         } catch (error) {
           console.error('Failed to delete location:', error)
@@ -1168,6 +1572,7 @@ export default function MapManagement() {
         try {
           await toggleLocationReservable(id)
           toast.success(`Location ${currentStatus ? 'deactivated' : 'activated'} successfully`)
+          await broadcastCacheInvalidation('location', selectedCampusId || undefined)
           loadLocations()
           setConfirmDialog({ ...confirmDialog, isOpen: false })
         } catch (error) {
@@ -1343,6 +1748,8 @@ export default function MapManagement() {
         toast.error(`Failed to upload ${failedImagesCount} image(s) and ${failedDocsCount} document(s)`)
       }
 
+      await broadcastCacheInvalidation('location', selectedCampusId || undefined)
+
       setShowLocationForm(false)
       setEditingLocation(null)
       loadLocations()
@@ -1457,6 +1864,7 @@ export default function MapManagement() {
         try {
           await deleteOpenSpace(id)
           toast.success('Open space deleted successfully')
+          await broadcastCacheInvalidation('openSpace', selectedCampusId || undefined)
           loadOpenSpaces()
           setConfirmDialog({ ...confirmDialog, isOpen: false })
         } catch (error) {
@@ -1482,6 +1890,7 @@ export default function MapManagement() {
         try {
           await toggleOpenSpaceActive(id)
           toast.success(`Open space ${currentStatus ? 'deactivated' : 'activated'} successfully`)
+          await broadcastCacheInvalidation('openSpace', selectedCampusId || undefined)
           loadOpenSpaces()
           setConfirmDialog({ ...confirmDialog, isOpen: false })
         } catch (error) {
@@ -1547,9 +1956,12 @@ export default function MapManagement() {
       // Create or Update Open Space
       if (isUpdate) {
         openSpaceId = editingOpenSpace.id
+        await updateOpenSpace(openSpaceId, requestData)
+        console.log('✅ Open space updated')
       } else {
         const response: any = await createOpenSpace(requestData)
         openSpaceId = response.id
+        console.log('✅ Open space created')
       }
 
       // Upload new images
@@ -1647,6 +2059,9 @@ export default function MapManagement() {
       if (failedImagesCount > 0 || failedDocsCount > 0) {
         toast.error(`Failed to upload ${failedImagesCount} image(s) and ${failedDocsCount} document(s)`)
       }
+
+      // Broadcast cache invalidation via WebSocket
+      await broadcastCacheInvalidation('openSpace', selectedCampusId || undefined)
 
       setShowOpenSpaceForm(false)
       setEditingOpenSpace(null)
@@ -1800,6 +2215,10 @@ export default function MapManagement() {
                     handleAddPath()
                   } else if (activeSection === 'boundaries') {
                     handleAddBoundary()
+                  } else if (activeSection === 'emergency') {
+                    handleAddEmergencyContact()
+                  } else if (activeSection === 'categories') {
+                    handleAddCategory()
                   }
                 }} 
                 size="sm" 
@@ -1897,72 +2316,125 @@ export default function MapManagement() {
         {/* Section Content */}
         {activeSection === 'overview' && (
           <>
-            {/* Overview Stats */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <StatCard title="Buildings" value="24" icon={Building2} />
-              <StatCard title="Locations" value="156" icon={MapPin} />
-              <StatCard title="Points of Interest" value="42" icon={Map} />
-              <StatCard title="Categories" value="12" icon={Tag} />
-            </div>
+            {isLoadingOverview ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Loading overview statistics...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Overview Stats */}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <StatCard title="Buildings" value={overviewStats.buildings.toString()} icon={Building2} />
+                  <StatCard title="Locations" value={overviewStats.locations.toString()} icon={MapPin} />
+                  <StatCard title="Points of Interest" value={overviewStats.pois.toString()} icon={Map} />
+                  <StatCard title="Categories" value={overviewStats.categories.toString()} icon={Tag} />
+                </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <StatCard title="Paths" value="28" icon={Route} />
-              <StatCard title="Boundaries" value="8" icon={Octagon} />
-              <StatCard title="Open Spaces" value="15" icon={Trees} />
-              <StatCard title="3D Models" value="8" icon={Layers} />
-            </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <StatCard title="Paths" value={overviewStats.paths.toString()} icon={Route} />
+                  <StatCard title="Boundaries" value={overviewStats.boundaries.toString()} icon={Octagon} />
+                  <StatCard title="Open Spaces" value={overviewStats.openSpaces.toString()} icon={Trees} />
+                  <StatCard title="3D Models" value={overviewStats.models.toString()} icon={Layers} />
+                </div>
+
+                {/* View Map Button */}
+                <Card>
+                  <CardContent className="py-6">
+                    <div className="text-center">
+                      <h3 className="text-lg font-semibold mb-2">Interactive Campus Map</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        View all buildings, paths, and open spaces on an interactive map. Click on any item to manage it.
+                      </p>
+                      <Button onClick={handleOpenMapPreview} size="lg" disabled={isLoadingMapData}>
+                        {isLoadingMapData ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2" />
+                            Loading Map Data...
+                          </>
+                        ) : (
+                          <>
+                            <Map className="w-5 h-5 mr-2" />
+                            View Campus Map
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             {/* Quick Overview Cards */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Updates</CardTitle>
-                  <CardDescription>Latest changes to map data</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 text-sm">
-                      <Building2 className="w-4 h-4 text-primary" />
-                      <span>Engineering Building updated</span>
-                      <span className="ml-auto text-muted-foreground">2h ago</span>
+            {!isLoadingOverview && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Data Summary</CardTitle>
+                    <CardDescription>Campus map content overview</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 text-sm">
+                        <Building2 className="w-4 h-4 text-primary" />
+                        <span className="flex-1">Buildings</span>
+                        <span className="font-semibold">{overviewStats.buildings}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <MapPin className="w-4 h-4 text-primary" />
+                        <span className="flex-1">Locations</span>
+                        <span className="font-semibold">{overviewStats.locations}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <Map className="w-4 h-4 text-primary" />
+                        <span className="flex-1">Points of Interest</span>
+                        <span className="font-semibold">{overviewStats.pois}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <Route className="w-4 h-4 text-primary" />
+                        <span className="flex-1">Navigation Paths</span>
+                        <span className="font-semibold">{overviewStats.paths}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      <Map className="w-4 h-4 text-primary" />
-                      <span>New POI: Coffee Shop</span>
-                      <span className="ml-auto text-muted-foreground">5h ago</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      <Layers className="w-4 h-4 text-primary" />
-                      <span>3D model uploaded</span>
-                      <span className="ml-auto text-muted-foreground">1d ago</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>System Status</CardTitle>
-                  <CardDescription>Map data health</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Buildings Coverage</span>
-                      <Badge variant="success">100%</Badge>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>System Status</CardTitle>
+                    <CardDescription>Map data coverage</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Buildings with 3D Models</span>
+                        <Badge variant={overviewStats.buildings > 0 && overviewStats.models > 0 ? (overviewStats.models / overviewStats.buildings >= 0.5 ? 'success' : 'warning') : 'secondary'}>
+                          {overviewStats.buildings > 0 ? Math.round((overviewStats.models / overviewStats.buildings) * 100) : 0}%
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Total 3D Models</span>
+                        <Badge variant="secondary">{overviewStats.models}</Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Campus Boundaries</span>
+                        <Badge variant={overviewStats.boundaries > 0 ? 'success' : 'secondary'}>
+                          {overviewStats.boundaries}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">Open Spaces</span>
+                        <Badge variant={overviewStats.openSpaces > 0 ? 'success' : 'secondary'}>
+                          {overviewStats.openSpaces}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">3D Models</span>
-                      <Badge variant="warning">33%</Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Navigation Paths</span>
-                      <Badge variant="success">95%</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </>
         )}
 
@@ -3649,48 +4121,448 @@ export default function MapManagement() {
         
 
         {activeSection === 'categories' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Location Categories</CardTitle>
-            <CardDescription>Manage and organize location categories</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              {categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors flex items-center justify-between"
+        <>
+          {/* Category Type Tabs */}
+          <Card className="mb-3 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex gap-2 mb-4">
+                <Button
+                  variant={categoryType === 'building' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setCategoryType('building')
+                    setCategoryPage(1)
+                  }}
+                  className="flex-1 sm:flex-none"
                 >
-                  <div className="flex items-center gap-2">
-                    <FolderTree className="w-4 h-4 text-primary" />
-                    <span className="font-medium text-sm">{category.name}</span>
-                  </div>
-                  <Button variant="ghost" size="sm">
-                    Edit
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Building Categories
+                </Button>
+                <Button
+                  variant={categoryType === 'open_space' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setCategoryType('open_space')
+                    setCategoryPage(1)
+                  }}
+                  className="flex-1 sm:flex-none"
+                >
+                  <Trees className="w-4 h-4 mr-2" />
+                  Open Space Categories
+                </Button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder={`Search ${categoryType === 'building' ? 'building' : 'open space'} categories...`}
+                    value={categorySearchQuery}
+                    onChange={(e) => {
+                      setCategorySearchQuery(e.target.value)
+                      setCategoryPage(1)
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+                {categorySearchQuery && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setCategorySearchQuery('')
+                      setCategoryPage(1)
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {!isLoadingCategories && categories.length > 0 && (
+                <p className="text-sm text-muted-foreground mt-3">
+                  Showing {categories.length} of {totalCategories} {categoryType === 'building' ? 'building' : 'open space'} categories
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Categories Grid */}
+          {isLoadingCategories ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading categories...</p>
+              </div>
+            </div>
+          ) : categories.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Tag className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No categories found</h3>
+                  <p className="text-muted-foreground mb-4">Add categories to organize your buildings and POIs</p>
+                  <Button onClick={handleAddCategory}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Category
                   </Button>
                 </div>
-              ))}
-            </div>
-            <div className="mt-4">
-              <Button variant="outline" className="w-full">
-                <Plus className="w-4 h-4 mr-2" />
-                Add New Category
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Categories Cards Grid */}
+              <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {categories.map((category: any) => (
+                  <Card 
+                    key={category.id} 
+                    className="overflow-hidden hover:shadow-lg transition-all group"
+                  >
+                    {/* Category Visual */}
+                    <div className="aspect-video bg-muted relative overflow-hidden">
+                      <div 
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ 
+                          backgroundColor: category.color || '#3B82F6',
+                          opacity: 0.9
+                        }}
+                      >
+                        {category.icon ? (
+                          <div className="text-6xl">
+                            {category.icon}
+                          </div>
+                        ) : (
+                          <div className="text-white text-4xl font-bold">
+                            {category.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action Buttons Overlay */}
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                          onClick={(e) => handleEditCategory(e, category.id)}
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-red-50"
+                          onClick={(e) => handleDeleteCategory(e, category.id, category.name)}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </div>
+
+                      {/* Usage Count Badge */}
+                      {(category._count?.buildings > 0 || category._count?.pois > 0 || category._count?.openSpaces > 0) && (
+                        <div className="absolute bottom-2 left-2">
+                          <Badge variant="secondary" className="bg-white/90 text-xs">
+                            {(category._count?.buildings || 0) + (category._count?.pois || 0) + (category._count?.openSpaces || 0)} items
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Category Info */}
+                    <CardContent className="p-3 md:p-4">
+                      <div className="mb-2">
+                        <h3 className="font-semibold text-base md:text-lg line-clamp-1">{category.name}</h3>
+                      </div>
+                      {category.description && (
+                        <p className="text-xs md:text-sm text-muted-foreground line-clamp-2 mb-2">
+                          {category.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        {category._count?.buildings > 0 && (
+                          <span>{category._count.buildings} buildings</span>
+                        )}
+                        {category._count?.openSpaces > 0 && (
+                          <span>{category._count.openSpaces} open spaces</span>
+                        )}
+                        {category._count?.pois > 0 && (
+                          <span>{category._count.pois} POIs</span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {categoryTotalPages > 1 && (
+                <Card className="mt-6">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {((categoryPage - 1) * CATEGORIES_PER_PAGE) + 1} to {Math.min(categoryPage * CATEGORIES_PER_PAGE, totalCategories)} of {totalCategories} categories
+                      </p>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCategoryPage(prev => Math.max(1, prev - 1))}
+                          disabled={categoryPage === 1}
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Previous
+                        </Button>
+                        
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, categoryTotalPages) }, (_, i) => {
+                            let pageNum
+                            if (categoryTotalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (categoryPage <= 3) {
+                              pageNum = i + 1
+                            } else if (categoryPage >= categoryTotalPages - 2) {
+                              pageNum = categoryTotalPages - 4 + i
+                            } else {
+                              pageNum = categoryPage - 2 + i
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={categoryPage === pageNum ? 'default' : 'outline'}
+                                size="sm"
+                                className="w-10"
+                                onClick={() => setCategoryPage(pageNum)}
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCategoryPage(prev => Math.min(categoryTotalPages, prev + 1))}
+                          disabled={categoryPage === categoryTotalPages}
+                        >
+                          Next
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </>
       )}
 
         {activeSection === 'emergency' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Emergency Contacts</CardTitle>
-            <CardDescription>Manage emergency contact information for different locations</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Emergency contacts management content coming soon...</p>
-          </CardContent>
-        </Card>
+        <>
+          {/* Search Bar */}
+          <Card className="mb-3 md:mb-6">
+            <CardContent className="p-3 md:p-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search emergency contacts..."
+                    value={emergencyContactSearchQuery}
+                    onChange={(e) => {
+                      setEmergencyContactSearchQuery(e.target.value)
+                      setEmergencyContactPage(1)
+                    }}
+                    className="pl-10"
+                  />
+                </div>
+                {emergencyContactSearchQuery && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEmergencyContactSearchQuery('')
+                      setEmergencyContactPage(1)
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {!isLoadingEmergencyContacts && emergencyContacts.length > 0 && (
+                <p className="text-sm text-muted-foreground mt-3">
+                  Showing {emergencyContacts.length} of {totalEmergencyContacts} emergency contacts
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Emergency Contacts Grid */}
+          {isLoadingEmergencyContacts ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading emergency contacts...</p>
+              </div>
+            </div>
+          ) : emergencyContacts.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Phone className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No emergency contacts found</h3>
+                  <p className="text-muted-foreground mb-4">Add emergency contacts to get started</p>
+                  <Button onClick={handleAddEmergencyContact}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Emergency Contact
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Emergency Contacts Cards Grid */}
+              <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {emergencyContacts.map((contact: any) => (
+                  <Card 
+                    key={contact.id} 
+                    className="overflow-hidden hover:shadow-lg transition-all group"
+                  >
+                    {/* Contact Visual */}
+                    <div className="aspect-video bg-muted relative overflow-hidden">
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-500/10 to-red-500/5">
+                        <Phone className="w-16 h-16 text-red-500/40 group-hover:text-red-500/60 transition-colors" />
+                      </div>
+                      
+                      {/* Status Dot */}
+                      <div className="absolute top-3 left-3">
+                        <div className={`w-2 h-2 rounded-full shadow-sm ${contact.isActive ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} title={contact.isActive ? 'Active' : 'Inactive'} />
+                      </div>
+
+                      {/* Action Buttons Overlay */}
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                          onClick={(e) => handleToggleEmergencyContactActivation(e, contact.id, contact.name, contact.isActive)}
+                          title={contact.isActive ? 'Deactivate' : 'Activate'}
+                        >
+                          <Power className={`w-4 h-4 ${contact.isActive ? 'text-green-600' : 'text-gray-400'}`} />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-white"
+                          onClick={(e) => handleEditEmergencyContact(e, contact.id)}
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4 text-blue-600" />
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="icon"
+                          className="h-8 w-8 rounded-full shadow-md bg-white/90 hover:bg-red-50"
+                          onClick={(e) => handleDeleteEmergencyContact(e, contact.id, contact.name)}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Contact Info */}
+                    <CardContent className="p-3 md:p-4">
+                      <div className="mb-2">
+                        <h3 className="font-semibold text-base md:text-lg line-clamp-1 mb-1">{contact.name}</h3>
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0.5">{contact.title}</Badge>
+                      </div>
+                      {contact.department && (
+                        <p className="text-xs text-muted-foreground mb-2">{contact.department}</p>
+                      )}
+                      <div className="space-y-1 text-xs md:text-sm">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                          <span className="font-medium">{contact.phone}</span>
+                        </div>
+                        {contact.email && (
+                          <div className="flex items-center gap-2">
+                            <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate">{contact.email}</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {emergencyContactTotalPages > 1 && (
+                <Card className="mt-6">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {((emergencyContactPage - 1) * EMERGENCY_CONTACTS_PER_PAGE) + 1} to {Math.min(emergencyContactPage * EMERGENCY_CONTACTS_PER_PAGE, totalEmergencyContacts)} of {totalEmergencyContacts} emergency contacts
+                      </p>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEmergencyContactPage(prev => Math.max(1, prev - 1))}
+                          disabled={emergencyContactPage === 1}
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Previous
+                        </Button>
+                        
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, emergencyContactTotalPages) }, (_, i) => {
+                            let pageNum
+                            if (emergencyContactTotalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (emergencyContactPage <= 3) {
+                              pageNum = i + 1
+                            } else if (emergencyContactPage >= emergencyContactTotalPages - 2) {
+                              pageNum = emergencyContactTotalPages - 4 + i
+                            } else {
+                              pageNum = emergencyContactPage - 2 + i
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={emergencyContactPage === pageNum ? 'default' : 'outline'}
+                                size="sm"
+                                className="w-10"
+                                onClick={() => setEmergencyContactPage(pageNum)}
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEmergencyContactPage(prev => Math.min(emergencyContactTotalPages, prev + 1))}
+                          disabled={emergencyContactPage === emergencyContactTotalPages}
+                        >
+                          Next
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </>
       )}
 
         {activeSection === 'open-spaces' && (
@@ -4094,6 +4966,7 @@ export default function MapManagement() {
         <BuildingForm
           building={editingBuilding}
           campuses={campuses}
+          categories={categories.filter((cat: any) => cat.type === 'building')}
           onSubmit={handleBuildingFormSubmit}
           onCancel={() => {
             setShowBuildingForm(false)
@@ -4108,6 +4981,7 @@ export default function MapManagement() {
         <OpenSpaceForm
           openSpace={editingOpenSpace}
           campuses={campuses}
+          categories={categories.filter((cat: any) => cat.type === 'open_space')}
           onSubmit={handleOpenSpaceFormSubmit}
           onCancel={() => {
             setShowOpenSpaceForm(false)
@@ -4198,6 +5072,98 @@ export default function MapManagement() {
           onToggleActive={(pathId, pathName, isActive) => {
             setPathToToggle({ id: pathId, name: pathName, isActive })
           }}
+        />
+      )}
+
+      {/* Campus Map Preview */}
+      {showMapPreview && (
+        <MapPreview
+          buildings={buildings}
+          paths={paths}
+          openSpaces={openSpaces}
+          campusId={selectedCampusId || undefined}
+          onClose={() => setShowMapPreview(false)}
+          onDeleteBuilding={(id, name) => {
+            setShowMapPreview(false)
+            handleDeleteBuilding({ stopPropagation: () => {} } as any, id)
+          }}
+          onToggleBuilding={(id, name, isActive) => {
+            setShowMapPreview(false)
+            handleToggleActivation({ stopPropagation: () => {} } as any, id, name, isActive)
+          }}
+          onDeletePath={(id, name) => {
+            setShowMapPreview(false)
+            setPathToDelete({ id, name })
+          }}
+          onTogglePath={(id, name, isActive) => {
+            setShowMapPreview(false)
+            setPathToToggle({ id, name, isActive })
+          }}
+          onDeleteOpenSpace={(id, name) => {
+            setShowMapPreview(false)
+            handleDeleteOpenSpace(id, name)
+          }}
+          onToggleOpenSpace={(id, name, isActive) => {
+            setShowMapPreview(false)
+            handleToggleOpenSpaceActive(id, name, isActive)
+          }}
+        />
+      )}
+
+      {/* Emergency Contact Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!emergencyContactToDelete}
+        title="Delete Emergency Contact"
+        message={`Are you sure you want to delete "${emergencyContactToDelete?.name}"? This action cannot be undone.`}
+        variant="danger"
+        onConfirm={confirmDeleteEmergencyContact}
+        onCancel={() => setEmergencyContactToDelete(null)}
+      />
+
+      {/* Emergency Contact Toggle Active Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!emergencyContactToToggle}
+        title={emergencyContactToToggle?.isActive ? 'Deactivate Emergency Contact' : 'Activate Emergency Contact'}
+        message={`Are you sure you want to ${emergencyContactToToggle?.isActive ? 'deactivate' : 'activate'} "${emergencyContactToToggle?.name}"?`}
+        variant="warning"
+        onConfirm={confirmToggleEmergencyContactActivation}
+        onCancel={() => setEmergencyContactToToggle(null)}
+      />
+
+      {/* Emergency Contact Form */}
+      {showEmergencyContactForm && (
+        <EmergencyContactForm
+          contact={editingEmergencyContact}
+          onSubmit={handleEmergencyContactFormSubmit}
+          onCancel={() => {
+            setShowEmergencyContactForm(false)
+            setEditingEmergencyContact(null)
+          }}
+          isLoading={isSubmittingEmergencyContact}
+        />
+      )}
+
+      {/* Category Delete Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={!!categoryToDelete}
+        title="Delete Category"
+        message={`Are you sure you want to delete "${categoryToDelete?.name}"? This action cannot be undone.`}
+        variant="danger"
+        onConfirm={confirmDeleteCategory}
+        onCancel={() => setCategoryToDelete(null)}
+      />
+
+      {/* Category Form */}
+      {showCategoryForm && (
+        <CategoryForm
+          category={editingCategory}
+          onSubmit={handleCategoryFormSubmit}
+          onCancel={() => {
+            setShowCategoryForm(false)
+            setEditingCategory(null)
+          }}
+          isLoading={isSubmittingCategory}
+          defaultType={categoryType}
         />
       )}
     </div>

@@ -102,6 +102,21 @@ export class CampusRepository {
   }
 
   /**
+   * Get public campus list (id and name only)
+   * Purpose: Minimal campus info for public access
+   */
+  async findPublicList() {
+    return prisma.campus.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: { name: 'asc' },
+    })
+  }
+
+  /**
    * Delete campus
    */
   async delete(id: string): Promise<Campus> {

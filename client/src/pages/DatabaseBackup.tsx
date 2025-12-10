@@ -1,16 +1,138 @@
-import { Database, Download, Upload, Trash2, RefreshCw } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Database, Download, Upload, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-
-const mockBackups = [
-  { id: 1, name: 'backup_2024_11_24.sql', size: '245 MB', date: '2024-11-24 09:30 AM', type: 'Manual' },
-  { id: 2, name: 'backup_2024_11_23.sql', size: '243 MB', date: '2024-11-23 09:30 AM', type: 'Automatic' },
-  { id: 3, name: 'backup_2024_11_22.sql', size: '240 MB', date: '2024-11-22 09:30 AM', type: 'Automatic' },
-  { id: 4, name: 'backup_2024_11_21.sql', size: '238 MB', date: '2024-11-21 09:30 AM', type: 'Automatic' },
-]
+import { useToast } from '@/hooks/useToast'
+import {
+  createBackup,
+  getAllBackups,
+  getBackupStats,
+  downloadBackup,
+  deleteBackup,
+  restoreBackup,
+  Backup,
+  BackupStats
+} from '@/api/backupApi'
 
 export default function DatabaseBackup() {
+  const { showToast } = useToast()
+  const [backups, setBackups] = useState<Backup[]>([])
+  const [stats, setStats] = useState<BackupStats | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const limit = 10
+
+  // Load backups and stats
+  useEffect(() => {
+    loadBackups()
+    loadStats()
+  }, [page])
+
+  const loadBackups = async () => {
+    try {
+      setLoading(true)
+      const response: any = await getAllBackups(page, limit)
+      setBackups(response.data)
+      setTotalPages(response.pagination.totalPages)
+    } catch (error) {
+      showToast('Failed to load backups', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadStats = async () => {
+    try {
+      const response: any = await getBackupStats()
+      setStats(response.data)
+    } catch (error) {
+      console.error('Failed to load stats:', error)
+    }
+  }
+
+  const handleCreateBackup = async () => {
+    try {
+      setLoading(true)
+      await createBackup('manual')
+      showToast('Backup created successfully', 'success')
+      loadBackups()
+      loadStats()
+    } catch (error) {
+      showToast('Failed to create backup', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDownload = async (backup: Backup) => {
+    try {
+      await downloadBackup(backup.id, backup.filename)
+      showToast('Backup downloaded', 'success')
+    } catch (error) {
+      showToast('Failed to download backup', 'error')
+    }
+  }
+
+  const handleRestore = async (backup: Backup) => {
+    if (!confirm(`Are you sure you want to restore from ${backup.filename}? This will replace the current database.`)) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      await restoreBackup(backup.id)
+      showToast('Database restored successfully. Please restart the server.', 'success')
+    } catch (error) {
+      showToast('Failed to restore backup', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async (backup: Backup) => {
+    if (!confirm(`Are you sure you want to delete ${backup.filename}?`)) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      await deleteBackup(backup.id)
+      showToast('Backup deleted successfully', 'success')
+      loadBackups()
+      loadStats()
+    } catch (error) {
+      showToast('Failed to delete backup', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString()
+  }
+
+  const getTimeAgo = (dateString: string | null) => {
+    if (!dateString) return 'Never'
+    const seconds = Math.floor((new Date().getTime() - new Date(dateString).getTime()) / 1000)
+    if (seconds < 60) return `${seconds}s ago`
+    const minutes = Math.floor(seconds / 60)
+    if (minutes < 60) return `${minutes}m ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours}h ago`
+    const days = Math.floor(hours / 24)
+    return `${days}d ago`
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -20,9 +142,9 @@ export default function DatabaseBackup() {
             Create and manage database backups
           </p>
         </div>
-        <Button>
+        <Button onClick={handleCreateBackup} disabled={loading}>
           <Database className="w-4 h-4 mr-2" />
-          Create Backup
+          {loading ? 'Creating...' : 'Create Backup'}
         </Button>
       </div>
 
@@ -32,7 +154,7 @@ export default function DatabaseBackup() {
             <CardTitle className="text-lg">Total Backups</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">24</p>
+            <p className="text-3xl font-bold">{stats?.totalBackups || 0}</p>
           </CardContent>
         </Card>
         <Card>
@@ -40,7 +162,7 @@ export default function DatabaseBackup() {
             <CardTitle className="text-lg">Total Size</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">5.8 GB</p>
+            <p className="text-3xl font-bold">{stats ? formatBytes(stats.totalSize) : '0 Bytes'}</p>
           </CardContent>
         </Card>
         <Card>
@@ -48,7 +170,7 @@ export default function DatabaseBackup() {
             <CardTitle className="text-lg">Last Backup</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">2h ago</p>
+            <p className="text-3xl font-bold">{getTimeAgo(stats?.lastBackup || null)}</p>
           </CardContent>
         </Card>
       </div>
@@ -84,40 +206,77 @@ export default function DatabaseBackup() {
           <CardDescription>View and manage existing backups</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {mockBackups.map((backup) => (
-              <div
-                key={backup.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <Database className="w-8 h-8 text-primary" />
-                  <div>
-                    <h3 className="font-semibold">{backup.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {backup.size} • {backup.date}
-                    </p>
+          {loading && backups.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">Loading backups...</div>
+          ) : backups.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <AlertCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No backups found</p>
+              <p className="text-sm">Create your first backup to get started</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {backups.map((backup) => (
+                  <div
+                    key={backup.id}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Database className="w-8 h-8 text-primary" />
+                      <div>
+                        <h3 className="font-semibold">{backup.filename}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {formatBytes(backup.size)} • {formatDate(backup.createdAt)}
+                        </p>
+                      </div>
+                      <Badge variant={backup.type === 'manual' ? 'default' : 'secondary'}>
+                        {backup.type}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleDownload(backup)}>
+                        <Download className="w-4 h-4 mr-1" />
+                        Download
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleRestore(backup)}>
+                        <Upload className="w-4 h-4 mr-1" />
+                        Restore
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDelete(backup)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <Badge variant={backup.type === 'Manual' ? 'default' : 'secondary'}>
-                    {backup.type}
-                  </Badge>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-1" />
-                    Download
-                  </Button>
-                  <Button variant="outline" size="sm">
-                    <Upload className="w-4 h-4 mr-1" />
-                    Restore
-                  </Button>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1 || loading}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {page} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages || loading}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

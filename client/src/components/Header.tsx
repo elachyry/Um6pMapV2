@@ -19,22 +19,23 @@ export default function Header() {
   
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string }>>([])
   
-  // WebSocket connection for real-time status
+  // WebSocket connection for real-time status (optional)
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
   const WS_URL = API_BASE_URL.replace('/api', '') + '/ws'
   
   const { isConnected } = useWebSocket({
     url: WS_URL,
+    reconnectInterval: 10000, // Retry every 10 seconds instead of 3
     onConnect: () => {
-      console.log('Connected to backend via WebSocket')
+      console.log('✓ WebSocket connected')
     },
     onDisconnect: () => {
-      console.log('Disconnected from backend')
+      // Silently handle disconnect - it's optional
     },
     onMessage: (data) => {
       // Handle WebSocket messages (heartbeat, etc.)
       if (data.type === 'heartbeat') {
-        console.log('Heartbeat received')
+        // Silently handle heartbeat
       }
     },
   })

@@ -1,60 +1,42 @@
 /**
  * User Routes
- * Purpose: Define user management endpoints with RBAC
+ * Purpose: Define user management endpoints
  */
 
 import { FastifyInstance } from 'fastify'
-import { authenticate } from '@/middleware/auth'
+import * as userController from '../controllers/userController'
 
-export async function userRoutes(fastify: FastifyInstance) {
-  // All routes require authentication
-  fastify.addHook('preHandler', authenticate)
-
-  // TODO: Implement user role management endpoints
-  // These will be added when the user role assignment feature is implemented
+export default async function userRoutes(fastify: FastifyInstance) {
+  // Get all users
+  fastify.get('/', userController.getAllUsers)
   
-  /*
-  // User role management
-  fastify.post(
-    '/:userId/roles',
-    {
-      preHandler: requirePermission(PERMISSIONS.USER_UPDATE),
-      config: {
-        rateLimit: {
-          max: 20,
-          timeWindow: '1 minute',
-        },
-      },
-    },
-    // Handler to be implemented
-  )
-
-  fastify.delete(
-    '/:userId/roles/:roleId',
-    {
-      preHandler: requirePermission(PERMISSIONS.USER_UPDATE),
-      config: {
-        rateLimit: {
-          max: 20,
-          timeWindow: '1 minute',
-        },
-      },
-    },
-    // Handler to be implemented
-  )
-
-  fastify.get(
-    '/:userId/permissions',
-    {
-      preHandler: requirePermission(PERMISSIONS.USER_VIEW),
-      config: {
-        rateLimit: {
-          max: 100,
-          timeWindow: '1 minute',
-        },
-      },
-    },
-    // Handler to be implemented
-  )
-  */
+  // Get user by ID
+  fastify.get('/:id', userController.getUserById)
+  
+  // Create user
+  fastify.post('/', userController.createUser)
+  
+  // Update user
+  fastify.put('/:id', userController.updateUser)
+  
+  // Delete user
+  fastify.delete('/:id', userController.deleteUser)
+  
+  // Toggle user status
+  fastify.patch('/:id/toggle-status', userController.toggleUserStatus)
+  
+  // Update password
+  fastify.patch('/:id/password', userController.updatePassword)
+  
+  // Reset password
+  fastify.post('/:id/reset-password', userController.resetPassword)
+  
+  // Get user audit logs
+  fastify.get('/:id/audit-logs', userController.getUserAuditLogs)
+  
+  // Bulk import users
+  fastify.post('/bulk-import', userController.bulkImport)
+  
+  // Bulk import temporary users with session dates
+  fastify.post('/bulk-import-temporary', userController.bulkImportTemporary)
 }

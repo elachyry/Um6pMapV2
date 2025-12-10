@@ -16,12 +16,18 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  const { user } = useAuthStore()
+
   useEffect(() => {
-    // Redirect if already authenticated
-    if (isAuthenticated) {
-      navigate('/dashboard')
+    // Redirect if already authenticated based on user type
+    if (isAuthenticated && user) {
+      if (user.userType === 'ADMIN' || user.userType === 'SUPER_ADMIN') {
+        navigate('/dashboard')
+      } else {
+        navigate('/map')
+      }
     }
-  }, [isAuthenticated, navigate])
+  }, [isAuthenticated, user, navigate])
 
   useEffect(() => {
     // Clear error when component unmounts
@@ -34,8 +40,21 @@ export default function Login() {
 
     try {
       await login(email, password)
-      navigate('/dashboard')
-    } catch (error) {
+      // Get the updated user from store after login
+      const currentUser = useAuthStore.getState().user
+      
+      // Redirect based on user type
+      if (currentUser?.userType === 'ADMIN' || currentUser?.userType === 'SUPER_ADMIN') {
+        navigate('/dashboard')
+      } else {
+        navigate('/map')
+      }
+    } catch (error: any) {
+      // Check if error is about pending email verification
+      if (error?.message?.includes('verify your email')) {
+        // Redirect to verification pending page
+        navigate('/verify-email-pending', { state: { email } })
+      }
       // Error is handled by the store
     }
   }
@@ -162,12 +181,12 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Register Link */}
+          {/* Signup Link */}
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
               Don't have an account?{' '}
-              <Link to="/register" className="text-primary hover:underline font-medium">
-                Create one
+              <Link to="/signup" className="text-primary hover:underline font-medium">
+                Sign up
               </Link>
             </p>
           </div>
@@ -175,7 +194,7 @@ export default function Login() {
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-muted-foreground">
-          <p>© 2024 UM6P Admin. All rights reserved.</p>
+          <p>© 2025 UM6P. All rights reserved.</p>
         </div>
       </div>
     </div>

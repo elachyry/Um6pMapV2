@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useToast } from '@/hooks/useToast'
 import { useCampusStore } from '@/stores/campusStore'
-import { getMapSettings, updateMapSettings, calculateMapCenter } from '@/api/campusApi'
+import { getMapSettings, updateMapSettings } from '@/api/campusApi'
 import { getCampusModels, uploadCampusModel, deleteCampusModel } from '@/api/modelApi'
+import { broadcastCacheInvalidation } from '@/api/cacheApi'
+import { apiClient } from '@/api/client'
 import { ModelViewer } from '@/components/ModelViewer'
 
 const MAPBOX_STYLES = [
@@ -32,6 +34,9 @@ export default function MapSettings() {
   const [models, setModels] = useState<any[]>([])
   const [isUploadingModel, setIsUploadingModel] = useState(false)
   const [previewModel, setPreviewModel] = useState<any>(null)
+  const [boundaries, setBoundaries] = useState<any[]>([])
+  const [showBoundaryDialog, setShowBoundaryDialog] = useState(false)
+  const [selectedBoundary, setSelectedBoundary] = useState<string>('')
 
   useEffect(() => {
     if (selectedCampusId) {
@@ -102,17 +107,34 @@ export default function MapSettings() {
     }
   }
 
-  const handleCalculateCenter = async () => {
+  const handleCalculateCenter = async (boundaryId?: string) => {
     if (!selectedCampusId) return
     try {
-      const response = await calculateMapCenter(selectedCampusId)
+      const response: any = await apiClient.post(`/campuses/${selectedCampusId}/calculate-center`, {
+        boundaryId
+      })
+      
+      // Check if multiple boundaries
+      if (response.multipleBoundaries) {
+        setBoundaries(response.boundaries)
+        setShowBoundaryDialog(true)
+        return
+      }
+      
       setSettings({
         ...settings,
         mapCenter: JSON.stringify(response.center)
       })
-      toast.success('Map center calculated from boundary')
+      toast.success(`Map center calculated from boundary${response.boundaryName ? `: ${response.boundaryName}` : ''}`)
+      setShowBoundaryDialog(false)
     } catch (error: any) {
       toast.error(error.message || 'Failed to calculate center')
+    }
+  }
+  
+  const handleBoundarySelect = () => {
+    if (selectedBoundary) {
+      handleCalculateCenter(selectedBoundary)
     }
   }
 
@@ -129,17 +151,20 @@ export default function MapSettings() {
         initialZoom: settings.initialZoom,
         minZoom: settings.minZoom,
         maxZoom: settings.maxZoom,
-        showBuildings: settings.showBuildings,
-        showPaths: settings.showPaths,
-        showBoundaries: settings.showBoundaries,
-        showParkingLots: settings.showParkingLots,
-        showOpenSpaces: settings.showOpenSpaces,
-        showPOIs: settings.showPOIs,
-        showLabels: settings.showLabels,
-        showGLBModels: settings.showGLBModels,
+        showBuildingLabels3D: settings.showBuildingLabels3D,
+        showBuildingLabelsNo3D: settings.showBuildingLabelsNo3D,
+        showBuildingIcons3D: settings.showBuildingIcons3D,
+        showBuildingIconsNo3D: settings.showBuildingIconsNo3D,
+        showOpenSpaceLabels3D: settings.showOpenSpaceLabels3D,
+        showOpenSpaceLabelsNo3D: settings.showOpenSpaceLabelsNo3D,
+        showOpenSpaceIcons3D: settings.showOpenSpaceIcons3D,
+        showOpenSpaceIconsNo3D: settings.showOpenSpaceIconsNo3D,
       }
       await updateMapSettings(selectedCampusId, mapSettingsData)
       toast.success('Map settings saved successfully')
+      
+      // Broadcast cache invalidation via WebSocket
+      await broadcastCacheInvalidation('mapSettings', selectedCampusId)
     } catch (error: any) {
       toast.error('Failed to save settings')
     } finally {
@@ -281,11 +306,52 @@ export default function MapSettings() {
                     })}
                   />
                 </div>
-                <Button variant="outline" className="mt-2" onClick={handleCalculateCenter}>
+                <Button variant="outline" className="mt-2" onClick={() => handleCalculateCenter()}>
                   <MapPin className="w-4 h-4 mr-2" />
                   Calculate from Boundary
                 </Button>
               </div>
+              
+              {/* Boundary Selection Dialog */}
+              {showBoundaryDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <Card className="w-full max-w-md">
+                    <CardHeader>
+                      <CardTitle>Select Boundary</CardTitle>
+                      <CardDescription>
+                        Multiple boundaries found. Please select one to calculate the map center.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          {boundaries.map((boundary: any) => (
+                            <label key={boundary.id} className="flex items-center space-x-2 cursor-pointer p-2 hover:bg-gray-100 rounded">
+                              <input
+                                type="radio"
+                                name="boundary"
+                                value={boundary.id}
+                                checked={selectedBoundary === boundary.id}
+                                onChange={(e) => setSelectedBoundary(e.target.value)}
+                                className="w-4 h-4"
+                              />
+                              <span>{boundary.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={() => setShowBoundaryDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleBoundarySelect} disabled={!selectedBoundary}>
+                            Calculate Center
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
 
               {/* Zoom Levels */}
               <div>
@@ -327,83 +393,95 @@ export default function MapSettings() {
             </CardContent>
           </Card>
 
-          {/* Layer Visibility */}
+          {/* Building Display Settings */}
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Layer Visibility</CardTitle>
-              <CardDescription>Control which elements appear on the map</CardDescription>
+              <CardTitle>Building Display Settings</CardTitle>
+              <CardDescription>Control labels and icons for buildings with and without 3D models</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Buildings</label>
+                  <label className="text-sm font-medium">Labels (with 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showBuildings !== false}
-                    onChange={(e) => setSettings({ ...settings, showBuildings: e.target.checked })}
+                    checked={settings.showBuildingLabels3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showBuildingLabels3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Paths</label>
+                  <label className="text-sm font-medium">Labels (without 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showPaths !== false}
-                    onChange={(e) => setSettings({ ...settings, showPaths: e.target.checked })}
+                    checked={settings.showBuildingLabelsNo3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showBuildingLabelsNo3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Boundaries</label>
+                  <label className="text-sm font-medium">Icons (with 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showBoundaries !== false}
-                    onChange={(e) => setSettings({ ...settings, showBoundaries: e.target.checked })}
+                    checked={settings.showBuildingIcons3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showBuildingIcons3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Parking Lots</label>
+                  <label className="text-sm font-medium">Icons (without 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showParkingLots !== false}
-                    onChange={(e) => setSettings({ ...settings, showParkingLots: e.target.checked })}
+                    checked={settings.showBuildingIconsNo3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showBuildingIconsNo3D: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Open Space Display Settings */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Open Space Display Settings</CardTitle>
+              <CardDescription>Control labels and icons for open spaces with and without 3D models</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3 border rounded">
+                  <label className="text-sm font-medium">Labels (with 3D models)</label>
+                  <input
+                    type="checkbox"
+                    checked={settings.showOpenSpaceLabels3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showOpenSpaceLabels3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Open Spaces</label>
+                  <label className="text-sm font-medium">Labels (without 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showOpenSpaces !== false}
-                    onChange={(e) => setSettings({ ...settings, showOpenSpaces: e.target.checked })}
+                    checked={settings.showOpenSpaceLabelsNo3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showOpenSpaceLabelsNo3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Points of Interest</label>
+                  <label className="text-sm font-medium">Icons (with 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showPOIs !== false}
-                    onChange={(e) => setSettings({ ...settings, showPOIs: e.target.checked })}
+                    checked={settings.showOpenSpaceIcons3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showOpenSpaceIcons3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>
                 <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">Labels</label>
+                  <label className="text-sm font-medium">Icons (without 3D models)</label>
                   <input
                     type="checkbox"
-                    checked={settings.showLabels !== false}
-                    onChange={(e) => setSettings({ ...settings, showLabels: e.target.checked })}
-                    className="w-4 h-4"
-                  />
-                </div>
-                <div className="flex items-center justify-between p-3 border rounded">
-                  <label className="text-sm font-medium">3D Models</label>
-                  <input
-                    type="checkbox"
-                    checked={settings.showGLBModels === true}
-                    onChange={(e) => setSettings({ ...settings, showGLBModels: e.target.checked })}
+                    checked={settings.showOpenSpaceIconsNo3D !== false}
+                    onChange={(e) => setSettings({ ...settings, showOpenSpaceIconsNo3D: e.target.checked })}
                     className="w-4 h-4"
                   />
                 </div>

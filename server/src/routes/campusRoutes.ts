@@ -6,11 +6,17 @@
  */
 
 import { FastifyInstance } from 'fastify'
-import { campusController } from '@/controllers/campusController'
+import { CampusController } from '@/controllers/campusController'
 import { authenticate } from '@/middleware/auth'
+import { prisma } from '@/config/database'
+
+const campusController = new CampusController()
 
 export async function campusRoutes(fastify: FastifyInstance) {
   // Public routes - no authentication required
+  // Get public campus list (names only) for signup
+  fastify.get('/campuses/public', campusController.getPublicList.bind(campusController))
+
   // Get all campuses (paginated)
   fastify.get('/campuses', campusController.getAll.bind(campusController))
 
@@ -40,30 +46,84 @@ export async function campusRoutes(fastify: FastifyInstance) {
   // Calculate map center from boundary
   fastify.post('/campuses/:id/calculate-center', { preHandler: authenticate }, async (request, reply) => {
     try {
-      const campusResponse: any = await campusController.getById(request, reply)
-      const mapData = campusResponse.mapData ? JSON.parse(campusResponse.mapData) : null
+      const { id } = request.params as { id: string }
+      const { boundaryId } = request.body as { boundaryId?: string }
       
-      if (!mapData?.boundary) {
+      // Fetch boundaries for this campus
+      const boundaries = await prisma.boundary.findMany({
+        where: {
+          campusId: id,
+          isActive: true
+        },
+        select: {
+          id: true,
+          name: true,
+          coordinates: true
+        }
+      })
+      
+      if (boundaries.length === 0) {
         return reply.status(400).send({
           success: false,
-          error: 'No boundary polygon found for campus'
+          error: 'No active boundaries found for this campus'
         })
       }
       
+      // If multiple boundaries and no boundaryId specified, return list
+      if (boundaries.length > 1 && !boundaryId) {
+        return reply.send({
+          success: false,
+          multipleBoundaries: true,
+          boundaries: boundaries.map((b: any) => ({
+            id: b.id,
+            name: b.name
+          })),
+          message: 'Multiple boundaries found. Please select one.'
+        })
+      }
+      
+      // Get the boundary to use
+      const boundary = boundaryId 
+        ? boundaries.find((b: any) => b.id === boundaryId)
+        : boundaries[0]
+      
+      if (!boundary || !boundary.coordinates) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Boundary coordinates not found'
+        })
+      }
+      
+      // Parse coordinates
+      const coords = typeof boundary.coordinates === 'string' 
+        ? JSON.parse(boundary.coordinates)
+        : boundary.coordinates
+      
       // Calculate centroid from polygon coordinates
-      const coords = mapData.boundary.geometry.coordinates[0]
+      const polygonCoords = coords.coordinates?.[0] || coords[0]
+      if (!polygonCoords || polygonCoords.length === 0) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Invalid boundary coordinates'
+        })
+      }
+      
       let latSum = 0, lngSum = 0
-      coords.forEach(([lng, lat]: [number, number]) => {
+      polygonCoords.forEach(([lng, lat]: [number, number]) => {
         latSum += lat
         lngSum += lng
       })
       
       const center = {
-        lat: latSum / coords.length,
-        lng: lngSum / coords.length
+        lat: latSum / polygonCoords.length,
+        lng: lngSum / polygonCoords.length
       }
       
-      return reply.send({ success: true, center })
+      return reply.send({ 
+        success: true, 
+        center,
+        boundaryName: boundary.name
+      })
     } catch (error: any) {
       request.log.error(error)
       return reply.status(500).send({

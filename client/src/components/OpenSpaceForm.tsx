@@ -34,6 +34,7 @@ interface OpenSpaceFormData {
   slug: string
   description: string
   campusId: string
+  categoryId: string
   address: string
   coordinates: string | null
   openSpaceType: string
@@ -62,6 +63,7 @@ interface OpenSpaceFormProps {
   onSubmit: (data: OpenSpaceFormData) => void
   onCancel: () => void
   campuses?: Array<{ id: string; name: string }>
+  categories?: Array<{ id: string; name: string }>
   isLoading?: boolean
 }
 
@@ -136,7 +138,7 @@ const AMENITY_ID_TO_NAME: Record<string, string> = Object.fromEntries(
   Object.entries(AMENITY_NAME_TO_ID).map(([name, id]) => [id, name])
 )
 
-export function OpenSpaceForm({ openSpace, onSubmit, onCancel, isLoading = false }: OpenSpaceFormProps) {
+export function OpenSpaceForm({ openSpace, onSubmit, onCancel, categories = [], isLoading = false }: OpenSpaceFormProps) {
   console.log('OpenSpaceForm - openSpace prop:', openSpace)
   console.log('OpenSpaceForm - openSpace.contactInfo:', openSpace?.contactInfo)
   console.log('OpenSpaceForm - openSpace.amenities:', openSpace?.amenities)
@@ -151,6 +153,7 @@ export function OpenSpaceForm({ openSpace, onSubmit, onCancel, isLoading = false
     slug: openSpace?.slug || '',
     description: openSpace?.description || '',
     campusId: openSpace?.campusId || '',
+    categoryId: openSpace?.categoryId || '',
     address: openSpace?.address || '',
     coordinates: openSpace?.coordinates || null,
     openSpaceType: openSpace?.openSpaceType || 'park',
@@ -222,6 +225,7 @@ export function OpenSpaceForm({ openSpace, onSubmit, onCancel, isLoading = false
         slug: openSpace.slug || '',
         description: openSpace.description || '',
         campusId: openSpace.campusId || '',
+        categoryId: openSpace.categoryId || '',
         address: openSpace.address || '',
         coordinates: openSpace.coordinates || null,
         openSpaceType: openSpace.openSpaceType || 'park',
@@ -476,15 +480,17 @@ export function OpenSpaceForm({ openSpace, onSubmit, onCancel, isLoading = false
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Type *</label>
+                  <label className="block text-sm font-medium mb-2">Category</label>
                   <select
-                    value={formData.openSpaceType}
-                    onChange={(e) => setFormData(prev => ({ ...prev, openSpaceType: e.target.value }))}
+                    value={formData.categoryId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, categoryId: e.target.value }))}
                     className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:border-primary"
-                    required
                   >
-                    {openSpaceTypes.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
+                    <option value="">Select Category</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
                     ))}
                   </select>
                 </div>

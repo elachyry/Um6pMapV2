@@ -14,7 +14,7 @@ export class BuildingRepository {
    * Purpose: Get complete building data with all relations
    */
   async findById(id: string): Promise<any> {
-    return prisma.buildings.findUnique({
+    const building = await prisma.buildings.findUnique({
       where: { id },
       include: {
         campus: true,
@@ -39,6 +39,16 @@ export class BuildingRepository {
         },
       },
     } as any)
+
+    // Fetch buildingModel if modelId exists
+    if (building && building.modelId) {
+      const buildingModel = await prisma.buildingModel.findUnique({
+        where: { id: building.modelId },
+      })
+      return { ...building, buildingModel }
+    }
+
+    return building
   }
 
   /**
@@ -124,7 +134,20 @@ export class BuildingRepository {
       prisma.buildings.count({ where }),
     ])
 
-    return { buildings, total }
+    // Fetch buildingModels for buildings that have modelId
+    const buildingsWithModels = await Promise.all(
+      buildings.map(async (building: any) => {
+        if (building.modelId) {
+          const buildingModel = await prisma.buildingModel.findUnique({
+            where: { id: building.modelId },
+          })
+          return { ...building, buildingModel }
+        }
+        return building
+      })
+    )
+
+    return { buildings: buildingsWithModels, total }
   }
 
   /**

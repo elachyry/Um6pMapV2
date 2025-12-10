@@ -6,14 +6,23 @@
 import { FastifyInstance } from 'fastify'
 import { authController } from '@/controllers/authController'
 import { authenticate } from '@/middleware/auth'
+import { requireUserType } from '@/middleware/rbac'
 
 export async function authRoutes(fastify: FastifyInstance) {
-  // Public routes
-  fastify.post('/register', authController.register.bind(authController))
+  // Public routes (no authentication required)
   fastify.post('/login', authController.login.bind(authController))
+  fastify.post('/signup', authController.signup.bind(authController)) // Self-registration for UM6P users
+  fastify.post('/magic-login', authController.magicLogin.bind(authController)) // Magic link login for temporary users
+  fastify.post('/verify-email', authController.verifyEmail.bind(authController))
+  fastify.post('/resend-verification', authController.resendVerification.bind(authController))
 
-  // Protected routes
-  fastify.get('/me', { preHandler: authenticate }, authController.me.bind(authController))
-  fastify.post('/change-password', { preHandler: authenticate }, authController.changePassword.bind(authController))
-  fastify.post('/logout', { preHandler: authenticate }, authController.logout.bind(authController))
+  // Admin-only routes (creating users manually)
+  fastify.post('/register', { 
+    preHandler: [authenticate, requireUserType('ADMIN', 'SUPER_ADMIN')] as any
+  }, authController.register.bind(authController))
+
+  // Protected routes (authenticated users)
+  fastify.get('/me', { preHandler: authenticate as any }, authController.me.bind(authController))
+  fastify.post('/change-password', { preHandler: authenticate as any }, authController.changePassword.bind(authController))
+  fastify.post('/logout', { preHandler: authenticate as any }, authController.logout.bind(authController))
 }

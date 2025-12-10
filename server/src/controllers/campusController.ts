@@ -62,6 +62,28 @@ export class CampusController {
   }
 
   /**
+   * Get public campus list (names only)
+   * Purpose: Return minimal campus info for public signup page
+   * No authentication required
+   */
+  async getPublicList(_request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const campuses = await campusService.getPublicList()
+
+      return reply.code(200).send({
+        success: true,
+        data: campuses,
+      })
+    } catch (error) {
+      console.error('Error fetching public campus list:', error)
+      return reply.code(500).send({
+        success: false,
+        error: 'Failed to fetch campus list',
+      })
+    }
+  }
+
+  /**
    * Get campus by ID
    * Purpose: Return single campus with details
    */

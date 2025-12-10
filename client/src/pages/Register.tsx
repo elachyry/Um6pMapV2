@@ -227,7 +227,7 @@ export default function Register() {
 
         {/* Footer */}
         <p className="text-center text-sm text-muted-foreground mt-8">
-          © 2024 UM6P. All rights reserved.
+          © 2025 UM6P. All rights reserved.
         </p>
       </div>
     </div>

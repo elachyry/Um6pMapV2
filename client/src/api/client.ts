@@ -3,7 +3,9 @@
  * Purpose: Centralized HTTP client for API requests
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL 
+  ? `${import.meta.env.VITE_API_URL}/api` 
+  : 'http://localhost:3000/api'
 
 interface ApiError {
   statusCode: number
@@ -90,6 +92,13 @@ class ApiClient {
   async delete<T>(endpoint: string, body?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'DELETE',
+      body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined),
+    })
+  }
+
+  async patch<T>(endpoint: string, body?: any): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
       body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined),
     })
   }

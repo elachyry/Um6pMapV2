@@ -57,6 +57,15 @@ export class CampusService {
   }
 
   /**
+   * Get public campus list (names only)
+   * Purpose: Return minimal campus info for public access (signup page)
+   * Outputs: Array of { id, name } objects
+   */
+  async getPublicList() {
+    return campusRepository.findPublicList()
+  }
+
+  /**
    * Get campus by ID
    * Purpose: Fetch single campus with details
    */

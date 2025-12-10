@@ -4,9 +4,16 @@ import { useThemeStore } from './stores/themeStore'
 import { ToastProvider } from './hooks/useToast'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import AdminRoute from './components/AdminRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Signup from './pages/Signup'
+import MagicLogin from './pages/MagicLogin'
+import VerifyEmail from './pages/VerifyEmail'
+import VerifyEmailPending from './pages/VerifyEmailPending'
+import ChangePassword from './pages/ChangePassword'
 import Dashboard from './pages/Dashboard'
+import Map from './pages/Map'
 import TemporaryUsers from './pages/TemporaryUsers'
 import PermanentUsers from './pages/PermanentUsers'
 import AccessRequests from './pages/AccessRequests'
@@ -32,18 +39,49 @@ function App() {
   return (
     <ToastProvider>
       <div className="min-h-screen">
-        <Router>
+        <Router
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}
+        >
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/magic-login" element={<MagicLogin />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/verify-email-pending" element={<VerifyEmailPending />} />
+          
+          {/* Change Password - Protected but accessible to all authenticated users */}
+          <Route 
+            path="/change-password" 
+            element={
+              <ProtectedRoute>
+                <ChangePassword />
+              </ProtectedRoute>
+            } 
+          />
 
-          {/* Protected Routes */}
+          {/* Map Route - Standalone (No Layout) */}
+          <Route 
+            path="/map" 
+            element={
+              <ProtectedRoute>
+                <Map />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Admin Routes with Layout */}
           <Route
             path="/"
             element={
               <ProtectedRoute>
-                <Layout />
+                <AdminRoute>
+                  <Layout />
+                </AdminRoute>
               </ProtectedRoute>
             }
           >

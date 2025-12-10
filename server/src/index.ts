@@ -17,6 +17,7 @@ import { prisma } from '@/config/database'
 import { logger } from '@/utils/logger'
 import { errorHandler } from '@/middleware/errorHandler'
 import { registerRoutes } from '@/routes'
+import { registerConnection } from '@/services/websocketService'
 
 /**
  * Build Fastify server
@@ -88,6 +89,9 @@ async function buildServer() {
   server.register(async (fastify) => {
     fastify.get('/ws', { websocket: true }, (connection) => {
       logger.info('WebSocket client connected')
+      
+      // Register connection for broadcasting
+      registerConnection(connection.socket)
       
       // Send initial connection message
       connection.socket.send(JSON.stringify({ 

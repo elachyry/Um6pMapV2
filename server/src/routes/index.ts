@@ -6,7 +6,7 @@
 import { FastifyInstance } from 'fastify'
 import { authRoutes } from './authRoutes'
 import { roleRoutes } from './roleRoutes'
-import { userRoutes } from './userRoutes'
+import userRoutes from './userRoutes'
 import buildingRoutes from './buildingRoutes'
 import locationRoutes from './locationRoutes'
 import openSpaceRoutes from './openSpaceRoutes'
@@ -16,6 +16,9 @@ import categoryRoutes from './categoryRoutes'
 import poiRoutes from './poiRoutes'
 import pathRoutes from './pathRoutes'
 import boundaryRoutes from './boundaryRoutes'
+import emergencyContactRoutes from './emergencyContactRoutes'
+import { cacheRoutes } from './v1/cacheRoutes'
+import backupRoutes from './v1/backupRoutes'
 
 export async function registerRoutes(fastify: FastifyInstance) {
   // API prefix
@@ -95,6 +98,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
     })
     
     instance.register(categoryRoutes, { 
+      prefix: '/categories',
       config: {
         rateLimit: {
           max: 100,
@@ -142,9 +146,40 @@ export async function registerRoutes(fastify: FastifyInstance) {
     })
     
     instance.register(boundaryRoutes, { 
+      prefix: '/boundaries',
       config: {
         rateLimit: {
           max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(emergencyContactRoutes, { 
+      prefix: '/emergency-contacts',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(cacheRoutes, { 
+      prefix: '/v1/cache',
+      config: {
+        rateLimit: {
+          max: 50,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(backupRoutes, { 
+      prefix: '/backups',
+      config: {
+        rateLimit: {
+          max: 20,
           timeWindow: '1 minute'
         }
       }

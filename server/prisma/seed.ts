@@ -8,6 +8,7 @@ import seedCampuses from './seeds/campuses'
 import { seedRolesAndPermissions } from './seeds/roles'
 import seedAmenities from './seeds/amenities'
 import { seedSuperAdmin } from './seeds/superAdmin'
+import { seedCategories } from './seeds/categories'
 
 async function main() {
   console.log('🌱 Starting database seeding...')
@@ -24,6 +25,9 @@ async function main() {
     
     // Seed amenities
     await seedAmenities()
+    
+    // Seed categories
+    await seedCategories()
 
     console.log('✅ Seeding completed successfully!')
   } catch (error) {

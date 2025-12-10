@@ -16,23 +16,23 @@ import {
 
 export default async function boundaryRoutes(fastify: FastifyInstance) {
   // Get all boundaries
-  fastify.get('/boundaries', getBoundaries)
+  fastify.get('/', getBoundaries)
 
   // Get boundary by ID
-  fastify.get('/boundaries/:id', getBoundaryById)
+  fastify.get('/:id', getBoundaryById)
 
   // Create boundary
-  fastify.post('/boundaries', createBoundary)
+  fastify.post('/', createBoundary)
 
   // Update boundary
-  fastify.put('/boundaries/:id', updateBoundary)
+  fastify.put('/:id', updateBoundary)
 
   // Delete boundary
-  fastify.delete('/boundaries/:id', deleteBoundary)
+  fastify.delete('/:id', deleteBoundary)
 
   // Toggle boundary active status
-  fastify.put('/boundaries/:id/toggle-active', toggleBoundaryActive)
+  fastify.put('/:id/toggle-active', toggleBoundaryActive)
 
   // Import boundaries from GeoJSON
-  fastify.post('/boundaries/import', importBoundaries)
+  fastify.post('/import', importBoundaries)
 }

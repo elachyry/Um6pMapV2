@@ -45,6 +45,15 @@ export class UserRepository {
   }
 
   /**
+   * Find user by verification token
+   */
+  async findByVerificationToken(token: string): Promise<User | null> {
+    return prisma.user.findUnique({
+      where: { verificationToken: token },
+    })
+  }
+
+  /**
    * Create new user
    */
   async create(data: Prisma.UserCreateInput): Promise<User> {
@@ -71,14 +80,12 @@ export class UserRepository {
   }
 
   /**
-   * Delete user (soft delete)
+   * Delete user (hard delete)
+   * Purpose: Permanently remove user and cascade delete related records
    */
   async delete(id: string): Promise<User> {
-    return prisma.user.update({
+    return prisma.user.delete({
       where: { id },
-      data: {
-        status: 'INACTIVE',
-      },
     })
   }
 

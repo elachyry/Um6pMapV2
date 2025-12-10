@@ -20,6 +20,8 @@ export function useWebSocket({
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const shouldReconnectRef = useRef(true)
+  const retryCountRef = useRef(0)
+  const maxRetries = 5
 
   const connect = () => {
     try {
@@ -30,6 +32,7 @@ export function useWebSocket({
       ws.onopen = () => {
         console.log('WebSocket connected')
         setIsConnected(true)
+        retryCountRef.current = 0 // Reset retry count on successful connection
         onConnect?.()
         
         // Clear any pending reconnect
@@ -49,33 +52,43 @@ export function useWebSocket({
         }
       }
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected')
+      ws.onclose = (event) => {
+        // Only log if it's not a normal closure
+        if (event.code !== 1000) {
+          console.log('WebSocket disconnected with code:', event.code)
+        }
         setIsConnected(false)
         onDisconnect?.()
         wsRef.current = null
 
-        // Attempt to reconnect if should reconnect
-        if (shouldReconnectRef.current) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('Attempting to reconnect WebSocket...')
-            connect()
-          }, reconnectInterval)
+        // Attempt to reconnect if should reconnect and not a normal closure
+        if (shouldReconnectRef.current && event.code !== 1000) {
+          retryCountRef.current++
+          
+          if (retryCountRef.current <= maxRetries) {
+            reconnectTimeoutRef.current = setTimeout(() => {
+              console.log(`Attempting to reconnect WebSocket (${retryCountRef.current}/${maxRetries})...`)
+              connect()
+            }, reconnectInterval)
+          } else {
+            console.warn('Max WebSocket reconnection attempts reached. Stopping reconnection.')
+          }
         }
       }
 
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        ws.close()
+        // Silently handle error - onclose will be called next
+        // This prevents duplicate error logging
+        console.warn('WebSocket error occurred, will attempt reconnect if needed')
       }
 
       wsRef.current = ws
     } catch (error) {
       console.error('Failed to create WebSocket:', error)
       
-      // Retry connection
+      // Retry connection with exponential backoff
       if (shouldReconnectRef.current) {
-        reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval)
+        reconnectTimeoutRef.current = setTimeout(connect, reconnectInterval * 2)
       }
     }
   }

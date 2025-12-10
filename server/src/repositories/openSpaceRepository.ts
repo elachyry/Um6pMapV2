@@ -48,6 +48,14 @@ export const findById = async (id: string) => {
     }
   })
 
+  // Fetch buildingModel if modelId exists
+  let buildingModel = null
+  if (openSpace.modelId) {
+    buildingModel = await prisma.buildingModel.findUnique({
+      where: { id: openSpace.modelId },
+    })
+  }
+
   return {
     ...openSpace,
     operatingHours,
@@ -55,6 +63,7 @@ export const findById = async (id: string) => {
     images,
     documents,
     amenities,
+    buildingModel,
   }
 }
 
@@ -125,12 +134,21 @@ export const findAll = async (page: number = 1, limit: number = 10, filters: any
         orderBy: { displayOrder: 'asc' }
       })
 
+      // Fetch buildingModel if modelId exists
+      let buildingModel = null
+      if (openSpace.modelId) {
+        buildingModel = await prisma.buildingModel.findUnique({
+          where: { id: openSpace.modelId },
+        })
+      }
+
       return {
         ...openSpace,
         operatingHours,
         contactInfo,
         images,
         documents,
+        buildingModel,
       }
     })
   )
