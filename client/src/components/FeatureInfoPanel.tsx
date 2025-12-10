@@ -29,9 +29,11 @@ interface FeatureInfoPanelProps {
   featureType: 'building' | 'openSpace'
   isLoading?: boolean
   onClose: () => void
+  onExpandChange?: (expanded: boolean) => void
+  onDirections?: () => void
 }
 
-export function FeatureInfoPanel({ feature, featureType, isLoading = false, onClose }: FeatureInfoPanelProps) {
+export function FeatureInfoPanel({ feature, featureType, isLoading = false, onClose, onExpandChange, onDirections }: FeatureInfoPanelProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<'overview' | 'hours' | 'locations' | 'services'>('overview')
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null)
@@ -57,10 +59,10 @@ export function FeatureInfoPanel({ feature, featureType, isLoading = false, onCl
     <>
       {/* Collapsed View - Mobile Only */}
       {!isExpanded && (
-        <div className="md:hidden fixed inset-x-0 bottom-0 z-50 bg-card shadow-2xl animate-slide-up">
-          <div className="flex items-center gap-3 p-4">
+        <div className="md:hidden fixed inset-x-0 bottom-0 z-[5] bg-card shadow-2xl animate-slide-up rounded-t-2xl">
+          <div className="flex items-center gap-3 p-3">
             {/* Image */}
-            <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+            <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
               {hasImages ? (
                 <img
                   src={getImageUrl(images[0])}
@@ -79,27 +81,30 @@ export function FeatureInfoPanel({ feature, featureType, isLoading = false, onCl
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm truncate">{feature.name}</h3>
+              <h3 className="font-medium text-sm truncate">{feature.name}</h3>
               <p className="text-xs text-muted-foreground truncate">
                 {feature.category?.name || featureType}
               </p>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
-                onClick={() => setIsExpanded(true)}
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
+                onClick={() => {
+                  setIsExpanded(true)
+                  onExpandChange?.(true)
+                }}
+                className="p-1.5 hover:bg-muted rounded-lg transition-colors"
                 aria-label="Expand"
               >
-                <ChevronUp className="w-5 h-5" />
+                <ChevronUp className="w-4 h-4" />
               </button>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
+                className="p-1.5 hover:bg-muted rounded-lg transition-colors"
                 aria-label="Close"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -107,10 +112,13 @@ export function FeatureInfoPanel({ feature, featureType, isLoading = false, onCl
       )}
 
       {/* Expanded View - Mobile & Desktop */}
-      <div className={`fixed inset-x-0 bottom-0 top-[72px] z-50 bg-card shadow-2xl flex flex-col animate-slide-up md:absolute md:inset-y-4 md:left-4 md:right-auto md:w-full md:max-w-md md:rounded-2xl ${!isExpanded ? 'hidden md:flex' : ''}`}>
+      <div className={`fixed inset-x-0 bottom-0 top-[72px] z-[5] bg-card shadow-2xl flex flex-col animate-slide-up rounded-t-2xl md:absolute md:inset-y-4 md:left-4 md:right-auto md:w-full md:max-w-md md:rounded-2xl ${!isExpanded ? 'hidden md:flex' : ''}`}>
         {/* Mobile Collapse Button */}
         <button
-          onClick={() => setIsExpanded(false)}
+          onClick={() => {
+            setIsExpanded(false)
+            onExpandChange?.(false)
+          }}
           className="md:hidden absolute top-2 right-2 z-10 p-2 bg-card/90 backdrop-blur-sm rounded-lg shadow-lg hover:bg-muted transition-colors"
           aria-label="Collapse"
         >
@@ -232,6 +240,18 @@ export function FeatureInfoPanel({ feature, featureType, isLoading = false, onCl
               </div>
               <span className="text-xs font-medium">Save</span>
             </button>
+            
+            {onDirections && (
+              <button 
+                onClick={onDirections}
+                className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-primary-50 transition-colors min-w-fit"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                  <Navigation className="w-5 h-5 text-primary-600" />
+                </div>
+                <span className="text-xs font-medium text-primary-600">Directions</span>
+              </button>
+            )}
             
             <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-muted transition-colors min-w-fit">
               <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">

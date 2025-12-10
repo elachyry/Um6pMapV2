@@ -15,12 +15,20 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { getAllBuildings, getBuildingById } from '@/api/buildingApi'
 import { getOpenSpaces, getOpenSpaceById } from '@/api/openSpaceApi'
+import { getLocations, getLocationById } from '@/api/locationApi'
 import { getAllCategories } from '@/api/categoryApi'
 import { getCampusById } from '@/api/campusApi'
 import { getCacheKey, getCacheVersion, isCacheValid, invalidateMapCache } from '@/utils/mapCache'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { FeatureInfoPanel } from '@/components/FeatureInfoPanel'
+import { MapControls } from '@/components/MapControls'
+import { MapSearch } from '@/components/MapSearch'
+import { DirectionsPanel } from '@/components/DirectionsPanel'
 import { use3DModels } from '@/hooks/use3DModels'
+import { getAllEmergencyContacts } from '@/api/emergencyContactApi'
+import { getPOIs } from '@/api/poiApi'
+import { getAllPaths } from '@/api/pathApi'
+import { usePathfinding } from '@/hooks/usePathfinding'
 
 // Mapbox access token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiZWxhY2hyeSIsImEiOiJjbTRqYXlqMmswMGNkMmtzNnBhMjBzNDVrIn0.pFBDxJ3Jc-TKMfZXMYB-Gg'
@@ -52,15 +60,35 @@ export default function Map() {
   const [selectedFeature, setSelectedFeature] = useState<any | null>(null)
   const [selectedFeatureType, setSelectedFeatureType] = useState<'building' | 'openSpace' | null>(null)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
-  const [previousMapPosition, setPreviousMapPosition] = useState<{ center: [number, number], zoom: number } | null>(null)
+  const [isPanelExpanded, setIsPanelExpanded] = useState(false)
+  const [showDirections, setShowDirections] = useState(false)
+  const [directionsDestination, setDirectionsDestination] = useState<{ name: string, coordinates: [number, number] } | null>(null)
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
+  const [previousMapPosition, setPreviousMapPosition] = useState<{ center: [number, number], zoom: number, pitch: number, bearing: number } | null>(null)
   const [buildingsData, setBuildingsData] = useState<any[]>([])
   const [openSpacesData, setOpenSpacesData] = useState<any[]>([])
+  const [locationsData, setLocationsData] = useState<any[]>([])
+  const [poisData, setPoisData] = useState<any[]>([])
+  const [pathsData, setPathsData] = useState<any[]>([])
+  const [emergencyContacts, setEmergencyContacts] = useState<any[]>([])
+  const [initialMapCenter, setInitialMapCenter] = useState<[number, number]>([-7.6033, 33.5731])
+  const [initialMapZoom, setInitialMapZoom] = useState(16)
+  const [initialMapPitch, setInitialMapPitch] = useState(0)
+  const [initialMapBearing, setInitialMapBearing] = useState(0)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
 
   // Load 3D models for buildings and open spaces
   use3DModels(map.current, buildingsData, openSpacesData)
+
+  // Initialize pathfinding with POIs and paths
+  const pathfinding = usePathfinding({
+    pois: poisData,
+    paths: pathsData,
+    buildings: buildingsData,
+    openSpaces: openSpacesData
+  })
 
   // Load emoji icon as canvas-based image for Mapbox
   const loadIconToMapbox = async (map: mapboxgl.Map, iconName: string, emoji: string): Promise<void> => {
@@ -222,6 +250,40 @@ export default function Map() {
         setBuildingsData(buildings)
         setOpenSpacesData(openSpaces)
 
+        // Load locations for search
+        try {
+          const locationsRes = await getLocations(1, 1000, undefined, selectedCampusId)
+          setLocationsData((locationsRes as any).data || [])
+        } catch (error) {
+          console.error('Failed to load locations:', error)
+        }
+
+        // Load POIs for pathfinding
+        try {
+          const poisRes = await getPOIs(1, 10000, selectedCampusId)
+          setPoisData((poisRes as any).data || [])
+          console.log('📍 Loaded POIs:', (poisRes as any).data?.length || 0)
+        } catch (error) {
+          console.error('Failed to load POIs:', error)
+        }
+
+        // Load Paths for pathfinding
+        try {
+          const pathsRes = await getAllPaths(1, 10000, '', selectedCampusId)
+          setPathsData((pathsRes as any).data || [])
+          console.log('🛤️  Loaded Paths:', (pathsRes as any).data?.length || 0)
+        } catch (error) {
+          console.error('Failed to load paths:', error)
+        }
+
+        // Load emergency contacts
+        try {
+          const contactsRes = await getAllEmergencyContacts()
+          setEmergencyContacts((contactsRes as any).data || [])
+        } catch (error) {
+          console.error('Failed to load emergency contacts:', error)
+        }
+
         // Log campus display settings
         console.log('🎨 Campus Display Settings:', {
           buildingLabels3D: campus.showBuildingLabels3D,
@@ -290,8 +352,13 @@ export default function Map() {
             maxZoom: campus?.maxZoom || 20
           })
 
-          // Add navigation controls
-          map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
+          // Store initial map position for reset (use the calculated values)
+          setInitialMapCenter(mapCenter)
+          setInitialMapZoom(mapZoom)
+          setInitialMapPitch(mapPitch)
+          setInitialMapBearing(mapBearing)
+          
+          // Don't add built-in navigation controls - using custom controls instead
         }
 
         map.current.on('load', async () => {
@@ -692,9 +759,13 @@ export default function Map() {
             // Save current map position before flying
             const currentCenter = map.current!.getCenter()
             const currentZoom = map.current!.getZoom()
+            const currentPitch = map.current!.getPitch()
+            const currentBearing = map.current!.getBearing()
             setPreviousMapPosition({
               center: [currentCenter.lng, currentCenter.lat],
-              zoom: currentZoom
+              zoom: currentZoom,
+              pitch: currentPitch,
+              bearing: currentBearing
             })
 
             // Focus on building
@@ -796,9 +867,13 @@ export default function Map() {
             // Save current map position before flying
             const currentCenter = map.current!.getCenter()
             const currentZoom = map.current!.getZoom()
+            const currentPitch = map.current!.getPitch()
+            const currentBearing = map.current!.getBearing()
             setPreviousMapPosition({
               center: [currentCenter.lng, currentCenter.lat],
-              zoom: currentZoom
+              zoom: currentZoom,
+              pitch: currentPitch,
+              bearing: currentBearing
             })
 
             // Focus on open space
@@ -820,6 +895,189 @@ export default function Map() {
               console.error('Failed to fetch open space details:', error)
             } finally {
               setIsLoadingDetails(false)
+            }
+          })
+
+          // General map click handler for 3D models
+          // This handles clicks on 3D models that don't have clickable 2D layers underneath
+          map.current!.on('click', async (e: any) => {
+            // Query all features at the click point
+            const features = map.current!.queryRenderedFeatures(e.point, {
+              layers: ['buildings-3d', 'openSpaces-fill']
+            })
+
+            // If we already have a feature from the layer-specific handlers, skip
+            if (features.length > 0) return
+
+            // Check if click is near any building or open space with a 3D model
+            const clickPoint = [e.lngLat.lng, e.lngLat.lat]
+
+            // Check buildings with 3D models
+            for (const building of buildings) {
+              if (!building.modelId || !building.buildingModel?.modelUrl) continue
+              
+              try {
+                const geometry = typeof building.coordinates === 'string' 
+                  ? JSON.parse(building.coordinates) 
+                  : building.coordinates
+                
+                // Simple point-in-polygon or proximity check
+                const coords = geometry.coordinates[0]
+                let inside = false
+                for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+                  const xi = coords[i][0], yi = coords[i][1]
+                  const xj = coords[j][0], yj = coords[j][1]
+                  
+                  const intersect = ((yi > clickPoint[1]) !== (yj > clickPoint[1]))
+                      && (clickPoint[0] < (xj - xi) * (clickPoint[1] - yi) / (yj - yi) + xi)
+                  if (intersect) inside = !inside
+                }
+
+                if (inside) {
+                  // Trigger building click
+                  // Clear previous selection
+                  if (selectedBuildingId !== null) {
+                    map.current!.setFeatureState(
+                      { source: 'buildings', id: selectedBuildingId as string },
+                      { selected: false }
+                    )
+                  }
+                  if (selectedOpenSpaceId !== null) {
+                    map.current!.setFeatureState(
+                      { source: 'openSpaces', id: selectedOpenSpaceId as string },
+                      { selected: false }
+                    )
+                    selectedOpenSpaceId = null
+                  }
+
+                  selectedBuildingId = building.id
+                  if (selectedBuildingId !== null && selectedBuildingId !== undefined) {
+                    map.current!.setFeatureState(
+                      { source: 'buildings', id: selectedBuildingId },
+                      { selected: true }
+                    )
+                  }
+
+                  // Save current map position
+                  const currentCenter = map.current!.getCenter()
+                  const currentZoom = map.current!.getZoom()
+                  const currentPitch = map.current!.getPitch()
+                  const currentBearing = map.current!.getBearing()
+                  setPreviousMapPosition({
+                    center: [currentCenter.lng, currentCenter.lat],
+                    zoom: currentZoom,
+                    pitch: currentPitch,
+                    bearing: currentBearing
+                  })
+
+                  // Focus on building
+                  map.current!.flyTo({
+                    center: [e.lngLat.lng, e.lngLat.lat],
+                    zoom: 18,
+                    pitch: 60,
+                    duration: 1500
+                  })
+
+                  // Fetch building details
+                  setIsLoadingDetails(true)
+                  setSelectedFeatureType('building')
+                  try {
+                    const buildingDetails = await getBuildingById(building.id)
+                    setSelectedFeature(buildingDetails)
+                  } catch (error) {
+                    console.error('Failed to fetch building details:', error)
+                  } finally {
+                    setIsLoadingDetails(false)
+                  }
+                  return
+                }
+              } catch (error) {
+                console.error('Error checking building click:', error)
+              }
+            }
+
+            // Check open spaces with 3D models
+            for (const openSpace of openSpaces) {
+              if (!openSpace.modelId || !openSpace.buildingModel?.modelUrl) continue
+              
+              try {
+                const geometry = typeof openSpace.coordinates === 'string' 
+                  ? JSON.parse(openSpace.coordinates) 
+                  : openSpace.coordinates
+                
+                // Simple point-in-polygon check
+                const coords = geometry.coordinates[0]
+                let inside = false
+                for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+                  const xi = coords[i][0], yi = coords[i][1]
+                  const xj = coords[j][0], yj = coords[j][1]
+                  
+                  const intersect = ((yi > clickPoint[1]) !== (yj > clickPoint[1]))
+                      && (clickPoint[0] < (xj - xi) * (clickPoint[1] - yi) / (yj - yi) + xi)
+                  if (intersect) inside = !inside
+                }
+
+                if (inside) {
+                  // Trigger open space click
+                  // Clear previous selection
+                  if (selectedOpenSpaceId !== null) {
+                    map.current!.setFeatureState(
+                      { source: 'openSpaces', id: selectedOpenSpaceId as string },
+                      { selected: false }
+                    )
+                  }
+                  if (selectedBuildingId !== null) {
+                    map.current!.setFeatureState(
+                      { source: 'buildings', id: selectedBuildingId as string },
+                      { selected: false }
+                    )
+                    selectedBuildingId = null
+                  }
+
+                  selectedOpenSpaceId = openSpace.id
+                  if (selectedOpenSpaceId !== null && selectedOpenSpaceId !== undefined) {
+                    map.current!.setFeatureState(
+                      { source: 'openSpaces', id: selectedOpenSpaceId },
+                      { selected: true }
+                    )
+                  }
+
+                  // Save current map position
+                  const currentCenter = map.current!.getCenter()
+                  const currentZoom = map.current!.getZoom()
+                  const currentPitch = map.current!.getPitch()
+                  const currentBearing = map.current!.getBearing()
+                  setPreviousMapPosition({
+                    center: [currentCenter.lng, currentCenter.lat],
+                    zoom: currentZoom,
+                    pitch: currentPitch,
+                    bearing: currentBearing
+                  })
+
+                  // Focus on open space
+                  map.current!.flyTo({
+                    center: [e.lngLat.lng, e.lngLat.lat],
+                    zoom: 17,
+                    pitch: 45,
+                    duration: 1500
+                  })
+
+                  // Fetch open space details
+                  setIsLoadingDetails(true)
+                  setSelectedFeatureType('openSpace')
+                  try {
+                    const openSpaceDetails = await getOpenSpaceById(openSpace.id)
+                    setSelectedFeature(openSpaceDetails)
+                  } catch (error) {
+                    console.error('Failed to fetch open space details:', error)
+                  } finally {
+                    setIsLoadingDetails(false)
+                  }
+                  return
+                }
+              } catch (error) {
+                console.error('Error checking open space click:', error)
+              }
             }
           })
 
@@ -874,6 +1132,101 @@ export default function Map() {
     const firstName = user?.firstName || ''
     const lastName = user?.lastName || ''
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+  }
+
+  const handleSearchSelect = async (result: { id: string; name: string; type: 'building' | 'openSpace' | 'location' }) => {
+    if (!map.current) return
+
+    // Save current map position
+    const currentCenter = map.current.getCenter()
+    const currentZoom = map.current.getZoom()
+    const currentPitch = map.current.getPitch()
+    const currentBearing = map.current.getBearing()
+    setPreviousMapPosition({
+      center: [currentCenter.lng, currentCenter.lat],
+      zoom: currentZoom,
+      pitch: currentPitch,
+      bearing: currentBearing
+    })
+
+    if (result.type === 'building') {
+      // Fetch and display building
+      setIsLoadingDetails(true)
+      setSelectedFeatureType('building')
+      try {
+        const buildingDetails = await getBuildingById(result.id)
+        setSelectedFeature(buildingDetails)
+        
+        // Fly to building
+        const geometry = typeof buildingDetails.coordinates === 'string'
+          ? JSON.parse(buildingDetails.coordinates)
+          : buildingDetails.coordinates
+        const coords = geometry.coordinates[0][0]
+        
+        map.current.flyTo({
+          center: coords,
+          zoom: 18,
+          pitch: 60,
+          duration: 1500
+        })
+      } catch (error) {
+        console.error('Failed to fetch building details:', error)
+      } finally {
+        setIsLoadingDetails(false)
+      }
+    } else if (result.type === 'openSpace') {
+      // Fetch and display open space
+      setIsLoadingDetails(true)
+      setSelectedFeatureType('openSpace')
+      try {
+        const openSpaceDetails: any = await getOpenSpaceById(result.id)
+        setSelectedFeature(openSpaceDetails)
+        
+        // Fly to open space
+        const geometry = typeof openSpaceDetails.coordinates === 'string'
+          ? JSON.parse(openSpaceDetails.coordinates)
+          : openSpaceDetails.coordinates
+        const coords = geometry.coordinates[0][0]
+        
+        map.current.flyTo({
+          center: coords,
+          zoom: 17,
+          pitch: 45,
+          duration: 1500
+        })
+      } catch (error) {
+        console.error('Failed to fetch open space details:', error)
+      } finally {
+        setIsLoadingDetails(false)
+      }
+    } else if (result.type === 'location') {
+      // Fetch and display location
+      setIsLoadingDetails(true)
+      setSelectedFeatureType('building') // Locations belong to buildings
+      try {
+        const locationDetails: any = await getLocationById(result.id)
+        setSelectedFeature(locationDetails)
+        
+        // Fly to location (use building coordinates if available)
+        if (locationDetails.building?.coordinates) {
+          const geometry = typeof locationDetails.building.coordinates === 'string'
+            ? JSON.parse(locationDetails.building.coordinates)
+            : locationDetails.building.coordinates
+          const coords = geometry.coordinates[0][0]
+          
+          map.current.flyTo({
+            center: coords,
+            zoom: 19,
+            pitch: 60,
+            duration: 1500
+          })
+        }
+      } catch (error) {
+        console.error('Failed to fetch location details:', error)
+      } finally {
+        setIsLoadingDetails(false)
+      }
+    }
   }
 
   return (
@@ -1057,6 +1410,216 @@ export default function Map() {
         
         <div ref={mapContainer} className="w-full h-full" />
 
+        {/* Search Bar */}
+        {!isLoading && !showDirections && (
+          <MapSearch
+            buildings={buildingsData}
+            openSpaces={openSpacesData}
+            locations={locationsData}
+            onSelect={handleSearchSelect}
+            onDirections={(result) => {
+              // If result has a name, set it as destination, otherwise open empty
+              if (result.name) {
+                setDirectionsDestination({
+                  name: result.name,
+                  coordinates: [0, 0] // Will be populated from actual data
+                })
+              } else {
+                setDirectionsDestination(null)
+              }
+              setShowDirections(true)
+            }}
+            isPanelExpanded={!!selectedFeature || isPanelExpanded}
+          />
+        )}
+
+        {/* Directions Panel */}
+        {showDirections && (
+          <DirectionsPanel
+            onClose={() => {
+              setShowDirections(false)
+              // Clear route from map
+              if (map.current) {
+                if (map.current.getLayer('route')) {
+                  map.current.removeLayer('route')
+                }
+                if (map.current.getSource('route')) {
+                  map.current.removeSource('route')
+                }
+              }
+              pathfinding.clearRoute()
+            }}
+            initialDestination={directionsDestination || undefined}
+            userLocation={userLocation}
+            buildings={buildingsData}
+            openSpaces={openSpacesData}
+            locations={locationsData}
+            onGetDirections={async (source, destination) => {
+              console.log('🗺️ Getting directions from', source?.name, 'to', destination?.name)
+              
+              if (!source || !destination) {
+                console.warn('⚠️ Source or destination missing')
+                return
+              }
+
+              // Helper function to extract valid coordinates
+              const getValidCoordinates = (data: any, fallback: any): [number, number] => {
+                // Try center first
+                if (data?.center && Array.isArray(data.center) && data.center.length === 2) {
+                  return data.center as [number, number]
+                }
+                
+                // Try coordinates field
+                if (data?.coordinates) {
+                  // If it's already an array of 2 numbers
+                  if (Array.isArray(data.coordinates) && data.coordinates.length === 2 &&
+                      typeof data.coordinates[0] === 'number' && typeof data.coordinates[1] === 'number') {
+                    return data.coordinates as [number, number]
+                  }
+                  
+                  // If it's a GeoJSON geometry
+                  if (typeof data.coordinates === 'string') {
+                    try {
+                      const parsed = JSON.parse(data.coordinates)
+                      if (parsed.type === 'Polygon' && parsed.coordinates?.[0]?.length > 0) {
+                        // Calculate centroid of polygon
+                        const coords = parsed.coordinates[0]
+                        const sumLng = coords.reduce((sum: number, c: number[]) => sum + c[0], 0)
+                        const sumLat = coords.reduce((sum: number, c: number[]) => sum + c[1], 0)
+                        return [sumLng / coords.length, sumLat / coords.length]
+                      }
+                    } catch (e) {
+                      console.warn('Failed to parse coordinates:', e)
+                    }
+                  }
+                }
+                
+                // Use fallback
+                if (fallback && Array.isArray(fallback) && fallback.length === 2) {
+                  return fallback as [number, number]
+                }
+                
+                console.warn('⚠️ No valid coordinates found, using default')
+                return [0, 0]
+              }
+
+              // Find the building/openSpace/location data to get proper coordinates and IDs
+              let sourceData: any = null
+              let destData: any = null
+
+              // Find source data
+              if (source.type === 'building') {
+                sourceData = buildingsData.find(b => b.id === source.id)
+              } else if (source.type === 'openSpace') {
+                sourceData = openSpacesData.find(os => os.id === source.id)
+              } else if (source.type === 'location') {
+                sourceData = locationsData.find(l => l.id === source.id)
+              }
+
+              // Find destination data
+              if (destination.type === 'building') {
+                destData = buildingsData.find(b => b.id === destination.id)
+              } else if (destination.type === 'openSpace') {
+                destData = openSpacesData.find(os => os.id === destination.id)
+              } else if (destination.type === 'location') {
+                destData = locationsData.find(l => l.id === destination.id)
+              }
+
+              // Get valid coordinates
+              const sourceCoords = getValidCoordinates(sourceData, source.coordinates)
+              const destCoords = getValidCoordinates(destData, destination.coordinates)
+
+              console.log('📍 Source coords:', sourceCoords, 'Dest coords:', destCoords)
+
+              // Calculate route
+              const route = await pathfinding.findRoute(
+                {
+                  coordinates: sourceCoords,
+                  name: source.name,
+                  type: source.type,
+                  buildingId: sourceData?.id || sourceData?.buildingId,
+                  openSpaceId: sourceData?.openSpaceId
+                },
+                {
+                  coordinates: destCoords,
+                  name: destination.name,
+                  type: destination.type,
+                  buildingId: destData?.id || destData?.buildingId,
+                  openSpaceId: destData?.openSpaceId
+                }
+              )
+
+              if (!route || !map.current) {
+                console.warn('⚠️ No route found or map not ready')
+                return
+              }
+
+              console.log('✅ Route calculated:', route.distance, 'meters,', route.estimatedTime, 'minutes')
+
+              // Draw route on map
+              const geojson = {
+                type: 'Feature' as const,
+                properties: {},
+                geometry: {
+                  type: 'LineString' as const,
+                  coordinates: route.coordinates
+                }
+              }
+
+              // Remove existing route if any
+              if (map.current.getLayer('route')) {
+                map.current.removeLayer('route')
+              }
+              if (map.current.getSource('route')) {
+                map.current.removeSource('route')
+              }
+
+              // Add route source and layer
+              map.current.addSource('route', {
+                type: 'geojson',
+                data: geojson
+              })
+
+              map.current.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: {
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                },
+                paint: {
+                  'line-color': '#4285F4',
+                  'line-width': 5,
+                  'line-opacity': 0.8
+                }
+              })
+
+              // Fit map to route bounds
+              const coordinates = route.coordinates
+              const bounds = coordinates.reduce((bounds, coord) => {
+                return bounds.extend(coord as [number, number])
+              }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]))
+
+              map.current.fitBounds(bounds, {
+                padding: { top: 100, bottom: 100, left: 100, right: 100 },
+                duration: 1000
+              })
+            }}
+          />
+        )}
+
+        {/* Custom Map Controls */}
+        <MapControls
+          map={map.current}
+          initialCenter={initialMapCenter}
+          initialZoom={initialMapZoom}
+          initialPitch={initialMapPitch}
+          initialBearing={initialMapBearing}
+          isPanelExpanded={isPanelExpanded}
+          emergencyContacts={emergencyContacts}
+        />
+
         {/* Info Panel - Google Maps Style */}
         {selectedFeature && selectedFeatureType && (
           <FeatureInfoPanel
@@ -1069,7 +1632,8 @@ export default function Map() {
                 map.current.flyTo({
                   center: previousMapPosition.center,
                   zoom: previousMapPosition.zoom,
-                  pitch: 0,
+                  pitch: previousMapPosition.pitch,
+                  bearing: previousMapPosition.bearing,
                   duration: 1500
                 })
               }
@@ -1077,6 +1641,17 @@ export default function Map() {
               setSelectedFeature(null)
               setSelectedFeatureType(null)
               setPreviousMapPosition(null)
+              setIsPanelExpanded(false)
+            }}
+            onExpandChange={setIsPanelExpanded}
+            onDirections={() => {
+              setDirectionsDestination({
+                name: selectedFeature.name,
+                coordinates: [0, 0] // Will be populated from actual data
+              })
+              setShowDirections(true)
+              setSelectedFeature(null)
+              setSelectedFeatureType(null)
             }}
           />
         )}

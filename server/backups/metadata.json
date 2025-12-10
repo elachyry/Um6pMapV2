@@ -1,0 +1,18 @@
+[
+  {
+    "id": "1765374580586",
+    "filename": "backup_2025-12-10_13-49-40-583Z.db",
+    "filepath": "/Users/elachyry/Um6pMap/um6pMapV2/server/backups/backup_2025-12-10_13-49-40-583Z.db",
+    "size": 987136,
+    "type": "manual",
+    "createdAt": "2025-12-10T13:49:40.586Z"
+  },
+  {
+    "id": "1765374853492",
+    "filename": "backup_2025-12-10_13-54-13-485Z.db",
+    "filepath": "/Users/elachyry/Um6pMap/um6pMapV2/server/backups/backup_2025-12-10_13-54-13-485Z.db",
+    "size": 987136,
+    "type": "automatic",
+    "createdAt": "2025-12-10T13:54:13.492Z"
+  }
+]
