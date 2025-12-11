@@ -182,7 +182,7 @@ class BackupController {
    * Get backup statistics
    * Purpose: Get backup stats
    */
-  async getStats(request: FastifyRequest, reply: FastifyReply) {
+  async getStats(_request: FastifyRequest, reply: FastifyReply) {
     try {
       const stats = await backupService.getStats()
       

@@ -29,12 +29,23 @@ interface DirectionsPanelProps {
   openSpaces: any[]
   locations?: any[]
   onGetDirections?: (source: any, destination: any) => void
+  onRequestLocation?: () => void
+  isGpsActive?: boolean
+  onGpsActiveChange?: (active: boolean) => void
 }
 
-export function DirectionsPanel({ onClose, initialDestination, userLocation, buildings, openSpaces, locations = [], onGetDirections }: DirectionsPanelProps) {
+export function DirectionsPanel({ onClose, initialDestination, userLocation, buildings, openSpaces, locations = [], onGetDirections, onRequestLocation, isGpsActive = false, onGpsActiveChange }: DirectionsPanelProps) {
   const [sourceInput, setSourceInput] = useState('')
   const [destinationInput, setDestinationInput] = useState(initialDestination?.name || '')
-  const [isSourceGPS, setIsSourceGPS] = useState(!!userLocation)
+  const [isSourceGPS, setIsSourceGPS] = useState(false)
+
+  // Auto-fill "My Location" when user location is active and panel opens
+  useEffect(() => {
+    if (isGpsActive && userLocation && !sourceInput) {
+      setSourceInput('My Location')
+      setIsSourceGPS(true)
+    }
+  }, [isGpsActive, userLocation])
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [showSourceSuggestions, setShowSourceSuggestions] = useState(false)
   const [showDestSuggestions, setShowDestSuggestions] = useState(false)
@@ -47,14 +58,6 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
   const sourceRef = useRef<HTMLDivElement>(null)
   const destRef = useRef<HTMLDivElement>(null)
   const hasCalculatedRef = useRef(false)
-
-  // Set initial source if GPS is available
-  useEffect(() => {
-    if (userLocation) {
-      setSourceInput('My Location')
-      setIsSourceGPS(true)
-    }
-  }, [userLocation])
 
   // Auto-calculate route when both source and destination are selected
   useEffect(() => {
@@ -217,12 +220,29 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
 
   const handleUseMyLocation = () => {
     if (userLocation) {
+      // Location already available, use it
       setSourceInput('My Location')
       setIsSourceGPS(true)
+      // Notify parent that GPS is active
+      if (onGpsActiveChange) {
+        onGpsActiveChange(true)
+      }
+    } else {
+      // Request location from parent (triggers GPS)
+      if (onRequestLocation) {
+        onRequestLocation()
+        // Optimistically set the input
+        setSourceInput('My Location')
+        setIsSourceGPS(true)
+        // Notify parent that GPS is active
+        if (onGpsActiveChange) {
+          onGpsActiveChange(true)
+        }
+      }
     }
   }
 
-  const handleVoiceSearch = (field: 'source' | 'destination') => {
+  const handleVoiceSearch = (_field: 'source' | 'destination') => {
     // Voice search implementation placeholder
     setVoiceError('Voice search is not available in your browser')
     setTimeout(() => setVoiceError(null), 3000)
@@ -278,9 +298,15 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
                   setSourceInput(e.target.value)
                   setIsSourceGPS(false)
                   setShowSourceSuggestions(true)
+                  // Notify parent that GPS is no longer active
+                  if (onGpsActiveChange && e.target.value !== 'My Location') {
+                    onGpsActiveChange(false)
+                  }
                 }}
                 onFocus={() => setShowSourceSuggestions(true)}
-                className="w-full pl-4 pr-32 py-3 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                className={`w-full pl-4 pr-32 py-3 text-sm border border-gray-200 rounded-xl bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 ${
+                  isSourceGPS ? 'text-blue-500 font-medium' : ''
+                }`}
                 style={{ fontSize: '16px' }}
               />
               
@@ -291,6 +317,10 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
                   onClick={() => {
                     setSourceInput('')
                     setIsSourceGPS(false)
+                    // Notify parent that GPS is no longer active
+                    if (onGpsActiveChange) {
+                      onGpsActiveChange(false)
+                    }
                   }}
                   className="absolute inset-y-0 flex items-center text-gray-400 hover:text-primary-500 transition-colors duration-200"
                   style={{ right: '7.5rem' }}
@@ -314,7 +344,9 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
               <button
                 type="button"
                 onClick={handleUseMyLocation}
-                className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-primary-500 transition-colors duration-200"
+                className={`absolute inset-y-0 right-3 flex items-center transition-colors duration-200 ${
+                  isSourceGPS ? 'text-blue-500' : 'text-gray-400 hover:text-primary-500'
+                }`}
               >
                 <Navigation className="h-5 w-5" />
               </button>

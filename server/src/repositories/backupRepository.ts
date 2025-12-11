@@ -5,14 +5,11 @@
  * Outputs: Backup records
  */
 
-import { PrismaClient } from '@prisma/client'
 import * as fs from 'fs'
 import * as path from 'path'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 
-const execAsync = promisify(exec)
-const prisma = new PrismaClient()
+
+
 
 export interface BackupRecord {
   id: string

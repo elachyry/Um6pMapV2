@@ -67,6 +67,11 @@ export function create3DLayer(map: mapboxgl.Map, config: Model3DConfig) {
   })
   renderer.autoClear = false
 
+  // Enable depth testing during initialization (like working implementation)
+  const glContext = renderer.getContext()
+  glContext.enable(glContext.DEPTH_TEST)
+  glContext.depthFunc(glContext.LEQUAL)
+
   return {
     id: config.id,
     type: 'custom' as const,
@@ -76,7 +81,7 @@ export function create3DLayer(map: mapboxgl.Map, config: Model3DConfig) {
       // Renderer already created
     },
 
-    render: function (gl: WebGLRenderingContext, matrix: number[]) {
+    render: function (_gl: WebGLRenderingContext, matrix: number[]) {
       if (!modelLoaded) return
 
       const transformMatrix = createTransformationMatrix(modelTransform, matrix)
@@ -94,17 +99,19 @@ export function create3DLayer(map: mapboxgl.Map, config: Model3DConfig) {
         .multiply(rotationZ)
         .scale(new THREE.Vector3(modelTransform.scale, -modelTransform.scale, modelTransform.scale))
 
-      // Reset renderer state
+      // Reset renderer state FIRST
       renderer.resetState()
 
-      // CRITICAL: Enable depth testing and depth writes for proper z-ordering
-      // This ensures 3D models integrate correctly with Mapbox's depth buffer
-      const glContext = renderer.getContext()
-      glContext.enable(glContext.DEPTH_TEST)
-      glContext.depthFunc(glContext.LEQUAL)
-      glContext.depthMask(true) // Enable depth writes
-
+      // CRITICAL: Enable depth testing exactly like working implementation
+      const gl = renderer.getContext()
+      gl.enable(gl.DEPTH_TEST)      // ← Enable depth testing
+      gl.depthFunc(gl.LEQUAL)       // ← Less than or equal comparison (CRITICAL!)
+      gl.depthMask(true)            // ← Enable depth writes (MOST CRITICAL!)
+      
+      // Render the scene
       renderer.render(scene, camera)
+      
+      // Trigger repaint
       map.triggerRepaint()
     },
 
@@ -135,6 +142,12 @@ export function add3DModelToMap(map: mapboxgl.Map, config: Model3DConfig): strin
   
   const addLayerToMap = () => {
     try {
+      // Check if layer already exists (prevent duplicate layer errors)
+      if (map.getLayer(config.id)) {
+        console.log(`⚠️ 3D model layer ${config.id} already exists, skipping`)
+        return
+      }
+
       // CRITICAL: Insert 3D model layer BEFORE buildings-3d (fill-extrusion) layer
       // This allows proper depth testing where:
       // 1. Open spaces fill renders first (bottom)
@@ -146,6 +159,21 @@ export function add3DModelToMap(map: mapboxgl.Map, config: Model3DConfig): strin
         // Insert before buildings-3d for proper depth integration
         map.addLayer(layer, 'buildings-3d')
         console.log(`✅ Added 3D model layer: ${config.id} BEFORE buildings-3d (with depth testing)`)
+        
+        // CRITICAL: Only reposition openSpaces-fill, NOT route
+        // Route is already correctly positioned before buildings-3d
+        // Moving it here would break the layer order (routes should be UNDER 3D models)
+        const layersToMove = ['openSpaces-fill']
+        layersToMove.forEach(layerId => {
+          if (map.getLayer(layerId)) {
+            try {
+              map.moveLayer(layerId, 'buildings-3d')
+              console.log(`✅ Repositioned ${layerId} BEFORE buildings-3d`)
+            } catch (e) {
+              console.warn(`Failed to reposition ${layerId}:`, e)
+            }
+          }
+        })
       } else {
         // Fallback: add normally if buildings-3d doesn't exist yet
         map.addLayer(layer)
@@ -155,7 +183,7 @@ export function add3DModelToMap(map: mapboxgl.Map, config: Model3DConfig): strin
       // Log layer order for debugging
       const allLayers = map.getStyle().layers?.map(l => l.id) || []
       const relevantLayers = allLayers.filter(id => 
-        id.includes('openSpaces') || id.includes('buildings') || id.includes('3d')
+        id.includes('openSpaces') || id.includes('buildings') || id.includes('3d') || id.includes('route')
       )
       console.log('📋 Layer order after adding 3D model:', relevantLayers)
     } catch (error) {

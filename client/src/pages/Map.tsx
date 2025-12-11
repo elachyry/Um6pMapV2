@@ -57,37 +57,45 @@ export default function Map() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [shouldReloadMap, setShouldReloadMap] = useState(0)
+  const [mapLayersReady, setMapLayersReady] = useState(false)
   const [selectedFeature, setSelectedFeature] = useState<any | null>(null)
   const [selectedFeatureType, setSelectedFeatureType] = useState<'building' | 'openSpace' | null>(null)
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false)
   const [isPanelExpanded, setIsPanelExpanded] = useState(false)
   const [showDirections, setShowDirections] = useState(false)
   const [directionsDestination, setDirectionsDestination] = useState<{ name: string, coordinates: [number, number] } | null>(null)
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null)
-  const [previousMapPosition, setPreviousMapPosition] = useState<{ center: [number, number], zoom: number, pitch: number, bearing: number } | null>(null)
-  const [buildingsData, setBuildingsData] = useState<any[]>([])
-  const [openSpacesData, setOpenSpacesData] = useState<any[]>([])
-  const [locationsData, setLocationsData] = useState<any[]>([])
-  const [poisData, setPoisData] = useState<any[]>([])
-  const [pathsData, setPathsData] = useState<any[]>([])
+  const [previousMapPosition, setPreviousMapPosition] = useState<any>(null)
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false)
+  const [isGpsActive, setIsGpsActive] = useState(false)
+  
+  // Map data state
+  const [pois, setPOIs] = useState<any[]>([])
+  const [paths, setPaths] = useState<any[]>([])
+  const [buildings, setBuildings] = useState<any[]>([])
+  const [openSpaces, setOpenSpaces] = useState<any[]>([])
+  const [categories, setCategories] = useState<any[]>([])
+  const [campus, setCampus] = useState<any>(null)
   const [emergencyContacts, setEmergencyContacts] = useState<any[]>([])
+  
   const [initialMapCenter, setInitialMapCenter] = useState<[number, number]>([-7.6033, 33.5731])
   const [initialMapZoom, setInitialMapZoom] = useState(16)
   const [initialMapPitch, setInitialMapPitch] = useState(0)
   const [initialMapBearing, setInitialMapBearing] = useState(0)
+  
+  const mapInitializingRef = useRef(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
 
   // Load 3D models for buildings and open spaces
-  use3DModels(map.current, buildingsData, openSpacesData)
+  use3DModels(map.current, buildings, openSpaces)
 
   // Initialize pathfinding with POIs and paths
   const pathfinding = usePathfinding({
-    pois: poisData,
-    paths: pathsData,
-    buildings: buildingsData,
-    openSpaces: openSpacesData
+    pois: pois,
+    paths: paths,
+    buildings: buildings,
+    openSpaces: openSpaces
   })
 
   // Load emoji icon as canvas-based image for Mapbox
@@ -185,7 +193,22 @@ export default function Map() {
 
   // Load map data with caching
   useEffect(() => {
-    if (!selectedCampusId || !mapContainer.current) return
+    console.log('🔄 Map useEffect triggered:', {
+      selectedCampusId,
+      theme,
+      shouldReloadMap,
+      mapContainerReady: !!mapContainer.current,
+      mapInitializing: mapInitializingRef.current
+    })
+    
+    if (!selectedCampusId || !mapContainer.current || mapInitializingRef.current) {
+      console.log('⏭️ Skipping map load: missing requirements or already initializing')
+      return
+    }
+
+    // Set initialization flag to prevent multiple simultaneous loads
+    mapInitializingRef.current = true
+    setMapLayersReady(false)
 
     const loadMapData = async () => {
       try {
@@ -246,22 +269,16 @@ export default function Map() {
           localStorage.setItem(cacheKey, JSON.stringify(cacheData))
         }
 
-        // Set data for 3D models
-        setBuildingsData(buildings)
-        setOpenSpacesData(openSpaces)
-
-        // Load locations for search
-        try {
-          const locationsRes = await getLocations(1, 1000, undefined, selectedCampusId)
-          setLocationsData((locationsRes as any).data || [])
-        } catch (error) {
-          console.error('Failed to load locations:', error)
-        }
+        // Set data for components
+        setBuildings(buildings)
+        setOpenSpaces(openSpaces)
+        setCategories(categories)
+        setCampus(campus)
 
         // Load POIs for pathfinding
         try {
           const poisRes = await getPOIs(1, 10000, selectedCampusId)
-          setPoisData((poisRes as any).data || [])
+          setPOIs((poisRes as any).data || [])
           console.log('📍 Loaded POIs:', (poisRes as any).data?.length || 0)
         } catch (error) {
           console.error('Failed to load POIs:', error)
@@ -270,7 +287,7 @@ export default function Map() {
         // Load Paths for pathfinding
         try {
           const pathsRes = await getAllPaths(1, 10000, '', selectedCampusId)
-          setPathsData((pathsRes as any).data || [])
+          setPaths((pathsRes as any).data || [])
           console.log('🛤️  Loaded Paths:', (pathsRes as any).data?.length || 0)
         } catch (error) {
           console.error('Failed to load paths:', error)
@@ -340,9 +357,10 @@ export default function Map() {
         }
 
         // Initialize map
-        if (!map.current) {
+        if (!map.current && mapContainer.current) {
+          console.log('🗺️ Creating new Mapbox instance')
           map.current = new mapboxgl.Map({
-            container: mapContainer.current!,
+            container: mapContainer.current,
             style: mapStyle,
             center: mapCenter,
             zoom: mapZoom,
@@ -351,6 +369,7 @@ export default function Map() {
             minZoom: campus?.minZoom || 10,
             maxZoom: campus?.maxZoom || 20
           })
+          console.log('✅ Mapbox instance created')
 
           // Store initial map position for reset (use the calculated values)
           setInitialMapCenter(mapCenter)
@@ -361,7 +380,15 @@ export default function Map() {
           // Don't add built-in navigation controls - using custom controls instead
         }
 
-        map.current.on('load', async () => {
+        // Early return if map is not initialized
+        if (!map.current) {
+          console.warn('⚠️ Map container not ready, skipping initialization')
+          setIsLoading(false)
+          return
+        }
+
+        // Function to add all map layers
+        const addMapLayers = async () => {
           if (!map.current) return
 
           // Add buildings layer
@@ -439,6 +466,9 @@ export default function Map() {
           // Strategy: Add open spaces first, then buildings (which will be on top)
           // 3D models added last via hook (will be on top of everything)
           
+          // Store label config at higher scope for later use
+          let openSpacesLabelConfig: any = null
+          
           // Step 1: Add Open Spaces (BOTTOM LAYER)
           if (openSpaceFeatures.length > 0) {
             console.log('📐 Layer Order Step 1: Adding Open Spaces (bottom)')
@@ -446,7 +476,6 @@ export default function Map() {
             // Remove existing source if it exists
             if (map.current!.getSource('openSpaces')) {
               if (map.current!.getLayer('openSpaces-labels')) map.current!.removeLayer('openSpaces-labels')
-              if (map.current!.getLayer('openSpaces-outline')) map.current!.removeLayer('openSpaces-outline')
               if (map.current!.getLayer('openSpaces-fill')) map.current!.removeLayer('openSpaces-fill')
               map.current!.removeSource('openSpaces')
             }
@@ -460,47 +489,10 @@ export default function Map() {
               promoteId: 'id'
             })
 
+            // Get list of open space IDs that have 3D models (needed for filters)
             const openSpacesWithModels = openSpaces
               .filter((os: any) => os.modelId && os.buildingModel?.modelUrl)
               .map((os: any) => os.id)
-
-            console.log(`🎯 Excluding ${openSpacesWithModels.length} open spaces with 3D models from fill layer`)
-
-            map.current!.addLayer({
-              id: 'openSpaces-fill',
-              type: 'fill',
-              source: 'openSpaces',
-              filter: ['!', ['in', ['get', 'id'], ['literal', openSpacesWithModels]]],
-              paint: {
-                'fill-color': [
-                  'case',
-                  ['boolean', ['feature-state', 'hover'], false],
-                  hoverColor,
-                  ['boolean', ['feature-state', 'selected'], false],
-                  highlightColor,
-                  ['get', 'color']
-                ],
-                'fill-opacity': 0.9
-              }
-            })
-
-            map.current!.addLayer({
-              id: 'openSpaces-outline',
-              type: 'line',
-              source: 'openSpaces',
-              filter: ['!', ['in', ['get', 'id'], ['literal', openSpacesWithModels]]],
-              paint: {
-                'line-color': [
-                  'case',
-                  ['boolean', ['feature-state', 'hover'], false],
-                  hoverColor,
-                  ['boolean', ['feature-state', 'selected'], false],
-                  highlightColor,
-                  ['get', 'color']
-                ],
-                'line-width': 2
-              }
-            })
 
             const showOSLabels3D = campus.showOpenSpaceLabels3D !== false
             const showOSLabelsNo3D = campus.showOpenSpaceLabelsNo3D !== false
@@ -529,37 +521,13 @@ export default function Map() {
               console.log('🏷️ Showing labels for ALL open spaces')
             }
 
-            map.current!.addLayer({
-              id: 'openSpaces-labels',
-              type: 'symbol',
-              source: 'openSpaces',
+            // Store label config for later (labels need to be added AFTER all 3D layers)
+            openSpacesLabelConfig = {
               filter: osLabelFilter,
-              layout: {
-                'icon-image': showOSIcons3D || showOSIconsNo3D ? ['get', 'icon'] : '',
-                'icon-size': 0.6,
-                'text-field': ['get', 'name'],
-                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                'text-size': 10,
-                'text-anchor': 'top',
-                'text-offset': [0, 0.8],
-                'icon-text-fit': 'none',
-                'text-allow-overlap': false,
-                'icon-allow-overlap': false,
-                'text-optional': true
-              },
-              paint: {
-                'text-color': '#2d5016',
-                'text-halo-color': '#ffffff',
-                'text-halo-width': 1.5,
-                'icon-color': '#22C55E',
-                'icon-opacity': [
-                  'case',
-                  ['in', ['get', 'id'], ['literal', openSpacesWithModels]],
-                  showOSIcons3D ? 1 : 0,
-                  showOSIconsNo3D ? 1 : 0
-                ]
-              }
-            })
+              showIcons3D: showOSIcons3D,
+              showIconsNo3D: showOSIconsNo3D,
+              openSpacesWithModels: openSpacesWithModels
+            }
           }
 
           // Step 2: Add Buildings (MIDDLE LAYER - on top of open spaces)
@@ -582,33 +550,105 @@ export default function Map() {
               promoteId: 'id'  // Enable feature state by promoting id property
             })
 
-            // Get list of building IDs that have 3D models
+            // Get list of building IDs and open space IDs that have 3D models
             const buildingsWithModels = buildings
               .filter((b: any) => b.modelId && b.buildingModel?.modelUrl)
               .map((b: any) => b.id)
+            
+            const openSpacesWithModels2 = openSpaces
+              .filter((os: any) => os.modelId && os.buildingModel?.modelUrl)
+              .map((os: any) => os.id)
 
             console.log(`🎯 Excluding ${buildingsWithModels.length} buildings with 3D models from fill-extrusion`)
+            console.log(`🎯 Excluding ${openSpacesWithModels2.length} open spaces with 3D models from fill layer`)
 
-            // 3D buildings layer (only for buildings WITHOUT 3D models)
-            map.current!.addLayer({
-              id: 'buildings-3d',
-              type: 'fill-extrusion',
-              source: 'buildings',
-              filter: ['!', ['in', ['get', 'id'], ['literal', buildingsWithModels]]],
-              paint: {
-                'fill-extrusion-color': [
-                  'case',
-                  ['boolean', ['feature-state', 'hover'], false],
-                  hoverColor,
-                  ['boolean', ['feature-state', 'selected'], false],
-                  highlightColor,
-                  ['get', 'color']
-                ],
-                'fill-extrusion-height': ['get', 'height'],
-                'fill-extrusion-base': 0,
-                'fill-extrusion-opacity': 1.0
-              }
-            })
+            // STEP 1: Add buildings-3d FIRST as reference layer
+            if (!map.current!.getLayer('buildings-3d')) {
+              map.current!.addLayer({
+                id: 'buildings-3d',
+                type: 'fill-extrusion',
+                source: 'buildings',
+                filter: ['!', ['in', ['get', 'id'], ['literal', buildingsWithModels]]],
+                paint: {
+                  'fill-extrusion-color': [
+                    'case',
+                    ['boolean', ['feature-state', 'hover'], false],
+                    hoverColor,
+                    ['boolean', ['feature-state', 'selected'], false],
+                    highlightColor,
+                    ['get', 'color']
+                  ],
+                  'fill-extrusion-height': ['get', 'height'],
+                  'fill-extrusion-base': 0,
+                  'fill-extrusion-opacity': 1.0
+                }
+              })
+              console.log('✅ Buildings-3d layer added FIRST (reference layer)')
+            }
+
+            // STEP 2: Add openSpaces layers BEFORE buildings-3d
+            // Since buildings-3d is guaranteed to exist now, always use beforeId
+            
+            if (!map.current!.getLayer('openSpaces-fill')) {
+              map.current!.addLayer({
+                id: 'openSpaces-fill',
+                type: 'fill-extrusion',  // ← Back to fill-extrusion (this was working!)
+                source: 'openSpaces',
+                filter: ['!', ['in', ['get', 'id'], ['literal', openSpacesWithModels2]]],
+                paint: {
+                  'fill-extrusion-color': [  // ← Back to fill-extrusion-color
+                    'case',
+                    ['boolean', ['feature-state', 'hover'], false],
+                    hoverColor,
+                    ['boolean', ['feature-state', 'selected'], false],
+                    highlightColor,
+                    ['get', 'color']
+                  ],
+                  'fill-extrusion-height': 0.1,  // ← Small height for 3D context
+                  'fill-extrusion-base': 0,
+                  'fill-extrusion-opacity': 0.8
+                }
+              }, 'buildings-3d')  // ← Always insert BEFORE buildings-3d
+              console.log('✅ openSpaces-fill added as FILL-EXTRUSION (working solution restored)')
+            }
+
+            // Outlines removed per user request
+
+            // STEP 3: Add placeholder route layer BEFORE 3D models are loaded
+            // This ensures route renders UNDER 3D models (temporal ordering)
+            // Route will be updated with actual data when user requests directions
+            if (!map.current!.getSource('route')) {
+              map.current!.addSource('route', {
+                type: 'geojson',
+                data: {
+                  type: 'FeatureCollection',
+                  features: []
+                }
+              })
+            }
+
+            if (!map.current!.getLayer('route')) {
+              map.current!.addLayer({
+                id: 'route',
+                type: 'line',
+                source: 'route',
+                layout: {
+                  'line-join': 'round',
+                  'line-cap': 'round'
+                },
+                paint: {
+                  'line-color': '#4285F4',
+                  'line-width': 5,
+                  'line-opacity': 0.8
+                }
+              }, 'buildings-3d')  // ← Insert BEFORE buildings-3d (same as 3D models)
+              console.log('✅ Route layer placeholder added BEFORE buildings-3d (will render under 3D models)')
+            }
+
+            // Clear initialization flag and mark layers as ready
+            mapInitializingRef.current = false
+            setMapLayersReady(true)
+            console.log('✅ Map layers ready - 3D models can now be loaded')
 
             // Determine which buildings to show labels/icons for based on settings
             const showLabels3D = campus.showBuildingLabels3D !== false
@@ -623,6 +663,8 @@ export default function Map() {
               iconsNo3D: showIconsNo3D,
               buildingsWithModels: buildingsWithModels.length
             })
+
+            // OpenSpaces labels will be handled in the proper section
 
             // Build filter for labels
             let labelFilter: any = ['all']
@@ -674,7 +716,46 @@ export default function Map() {
           }
 
           // Step 3: 3D Models added via use3DModels hook (TOP LAYER)
-          console.log('� Layer Order Step 3: 3D Models will be added on top via hook')
+          console.log('📐 Layer Order Step 3: 3D Models will be added on top via hook')
+
+          // STEP 4: Add openSpaces labels at the VERY END (on top of all 3D elements)
+          if (openSpaceFeatures.length > 0 && openSpacesLabelConfig) {
+            if (!map.current!.getLayer('openSpaces-labels')) {
+              map.current!.addLayer({
+                id: 'openSpaces-labels',
+                type: 'symbol',
+                source: 'openSpaces',
+                filter: openSpacesLabelConfig.filter,
+                layout: {
+                  'icon-image': openSpacesLabelConfig.showIcons3D || openSpacesLabelConfig.showIconsNo3D ? ['get', 'icon'] : '',
+                  'icon-size': 0.6,
+                  'text-field': ['get', 'name'],
+                  'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                  'text-size': 12,
+                  'text-anchor': 'center',
+                  'text-offset': [0, 0],
+                  'icon-text-fit': 'none',
+                  'text-allow-overlap': false,
+                  'icon-allow-overlap': false,
+                  'text-optional': true
+                },
+                paint: {
+                  'text-color': '#2d5016',
+                  'text-halo-color': '#ffffff',
+                  'text-halo-width': 2,
+                  'icon-color': '#22C55E',
+                  'icon-opacity': [
+                    'case',
+                    ['in', ['get', 'id'], ['literal', openSpacesLabelConfig.openSpacesWithModels]],
+                    openSpacesLabelConfig.showIcons3D ? 1 : 0,
+                    openSpacesLabelConfig.showIconsNo3D ? 1 : 0
+                  ]
+                }
+              })
+              // No beforeId = added to VERY TOP of rendering stack
+              console.log('✅ openSpaces-labels added at TOP (above all 3D elements)')
+            }
+          }
 
           // Track hover and selected states
           let hoveredBuildingId: string | null = null
@@ -1082,7 +1163,22 @@ export default function Map() {
           })
 
           setIsLoading(false)
-        })
+        }
+
+        // Call addMapLayers based on map state
+        // Use isStyleLoaded() which is more reliable than loaded()
+        const isStyleLoaded = map.current.isStyleLoaded()
+        console.log('🗺️ Map style loaded:', isStyleLoaded)
+        
+        if (isStyleLoaded) {
+          // Style is already loaded, add layers immediately
+          console.log('📍 Map style already loaded, adding layers immediately')
+          await addMapLayers()
+        } else {
+          // Style not loaded yet, wait for style.load event (more reliable than 'load')
+          console.log('⏳ Map style not loaded, waiting for style.load event')
+          map.current.once('style.load', addMapLayers)
+        }
       } catch (err: any) {
         console.error('Error loading map:', err)
         setError(err.message || 'Failed to load map')
@@ -1099,7 +1195,24 @@ export default function Map() {
         map.current = null
       }
     }
-  }, [selectedCampusId, theme, shouldReloadMap])
+  }, [selectedCampusId, shouldReloadMap])
+
+  // Handle theme changes separately without reloading entire map
+  useEffect(() => {
+    if (map.current && theme) {
+      // Update map style for theme changes without full reload
+      const mapStyle = theme === 'dark' 
+        ? 'mapbox://styles/mapbox/dark-v11'
+        : 'mapbox://styles/mapbox/light-v11'
+      
+      // Only update style if it's different
+      const currentStyle = map.current.getStyle()
+      if (currentStyle.name !== mapStyle.split('/').pop()) {
+        map.current.setStyle(mapStyle)
+        console.log('🎨 Updated map style for theme change:', theme)
+      }
+    }
+  }, [theme])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1389,7 +1502,7 @@ export default function Map() {
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
             <div className="text-center">
               <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-              <p className="text-sm text-muted-foreground">Loading interactive map...</p>
+              <p className="text-sm text-muted-foreground">Loading map...</p>
             </div>
           </div>
         )}
@@ -1413,9 +1526,9 @@ export default function Map() {
         {/* Search Bar */}
         {!isLoading && !showDirections && (
           <MapSearch
-            buildings={buildingsData}
-            openSpaces={openSpacesData}
-            locations={locationsData}
+            buildings={buildings}
+            openSpaces={openSpaces}
+            locations={[]}
             onSelect={handleSearchSelect}
             onDirections={(result) => {
               // If result has a name, set it as destination, otherwise open empty
@@ -1438,22 +1551,45 @@ export default function Map() {
           <DirectionsPanel
             onClose={() => {
               setShowDirections(false)
-              // Clear route from map
+              // Clear route data (but keep the layer for reuse)
               if (map.current) {
-                if (map.current.getLayer('route')) {
-                  map.current.removeLayer('route')
+                const routeSource = map.current.getSource('route') as mapboxgl.GeoJSONSource
+                if (routeSource) {
+                  routeSource.setData({
+                    type: 'FeatureCollection',
+                    features: []
+                  })
+                  console.log('✅ Route cleared (layer preserved for reuse)')
                 }
-                if (map.current.getSource('route')) {
-                  map.current.removeSource('route')
+                
+                // Restore previous map position if it exists
+                if (previousMapPosition) {
+                  map.current.flyTo({
+                    center: previousMapPosition.center,
+                    zoom: previousMapPosition.zoom,
+                    pitch: previousMapPosition.pitch,
+                    bearing: previousMapPosition.bearing,
+                    duration: 1000
+                  })
+                  console.log('✅ Restored previous map position')
+                  setPreviousMapPosition(null)
                 }
               }
               pathfinding.clearRoute()
             }}
             initialDestination={directionsDestination || undefined}
             userLocation={userLocation}
-            buildings={buildingsData}
-            openSpaces={openSpacesData}
-            locations={locationsData}
+            buildings={buildings}
+            openSpaces={openSpaces}
+            locations={[]}
+            isGpsActive={isGpsActive}
+            onGpsActiveChange={(active) => setIsGpsActive(active)}
+            onRequestLocation={() => {
+              // Trigger GPS from MapControls
+              if ((window as any).triggerMapGPS) {
+                (window as any).triggerMapGPS()
+              }
+            }}
             onGetDirections={async (source, destination) => {
               console.log('🗺️ Getting directions from', source?.name, 'to', destination?.name)
               
@@ -1509,20 +1645,20 @@ export default function Map() {
 
               // Find source data
               if (source.type === 'building') {
-                sourceData = buildingsData.find(b => b.id === source.id)
+                sourceData = buildings.find((b: any) => b.id === source.id)
               } else if (source.type === 'openSpace') {
-                sourceData = openSpacesData.find(os => os.id === source.id)
+                sourceData = openSpaces.find((os: any) => os.id === source.id)
               } else if (source.type === 'location') {
-                sourceData = locationsData.find(l => l.id === source.id)
+                sourceData = [] // No locations data currently
               }
 
               // Find destination data
               if (destination.type === 'building') {
-                destData = buildingsData.find(b => b.id === destination.id)
+                destData = buildings.find((b: any) => b.id === destination.id)
               } else if (destination.type === 'openSpace') {
-                destData = openSpacesData.find(os => os.id === destination.id)
+                destData = openSpaces.find((os: any) => os.id === destination.id)
               } else if (destination.type === 'location') {
-                destData = locationsData.find(l => l.id === destination.id)
+                destData = [] // No locations data currently
               }
 
               // Get valid coordinates
@@ -1566,34 +1702,33 @@ export default function Map() {
                 }
               }
 
-              // Remove existing route if any
-              if (map.current.getLayer('route')) {
-                map.current.removeLayer('route')
-              }
-              if (map.current.getSource('route')) {
-                map.current.removeSource('route')
+              // Update existing route source with new data
+              // Route layer was already added during map initialization with correct ordering
+              const routeSource = map.current.getSource('route') as mapboxgl.GeoJSONSource
+              if (routeSource) {
+                routeSource.setData({
+                  type: 'FeatureCollection',
+                  features: [geojson]
+                })
+                console.log('✅ Route data updated (layer order preserved)')
+              } else {
+                console.warn('⚠️ Route source not found, this should not happen')
               }
 
-              // Add route source and layer
-              map.current.addSource('route', {
-                type: 'geojson',
-                data: geojson
-              })
-
-              map.current.addLayer({
-                id: 'route',
-                type: 'line',
-                source: 'route',
-                layout: {
-                  'line-join': 'round',
-                  'line-cap': 'round'
-                },
-                paint: {
-                  'line-color': '#4285F4',
-                  'line-width': 5,
-                  'line-opacity': 0.8
-                }
-              })
+              // Save current map position before fitting to route bounds
+              if (!previousMapPosition) {
+                const currentCenter = map.current.getCenter()
+                const currentZoom = map.current.getZoom()
+                const currentPitch = map.current.getPitch()
+                const currentBearing = map.current.getBearing()
+                setPreviousMapPosition({
+                  center: [currentCenter.lng, currentCenter.lat],
+                  zoom: currentZoom,
+                  pitch: currentPitch,
+                  bearing: currentBearing
+                })
+                console.log('💾 Saved map position before showing route')
+              }
 
               // Fit map to route bounds
               const coordinates = route.coordinates
@@ -1618,6 +1753,9 @@ export default function Map() {
           initialBearing={initialMapBearing}
           isPanelExpanded={isPanelExpanded}
           emergencyContacts={emergencyContacts}
+          onLocationUpdate={(location) => setUserLocation(location)}
+          isGpsActive={isGpsActive}
+          onGpsActiveChange={(active) => setIsGpsActive(active)}
         />
 
         {/* Info Panel - Google Maps Style */}
@@ -1664,7 +1802,7 @@ export default function Map() {
             <span className="font-medium">User Type:</span> {user?.userType}
           </div>
           <div className="text-center sm:text-right">
-            © 2024 UM6P. All rights reserved.
+            © 2025 UM6P. All rights reserved.
           </div>
         </div>
       </div>

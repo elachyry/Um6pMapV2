@@ -23,6 +23,9 @@ interface MapControlsProps {
     phone: string
     type: string
   }>
+  onLocationUpdate?: (location: [number, number]) => void
+  isGpsActive?: boolean
+  onGpsActiveChange?: (active: boolean) => void
 }
 
 export function MapControls({ 
@@ -32,11 +35,33 @@ export function MapControls({
   initialPitch = 0, 
   initialBearing = 0, 
   isPanelExpanded = false,
-  emergencyContacts = [] 
+  emergencyContacts = [],
+  onLocationUpdate,
+  isGpsActive: externalIsGpsActive = false,
+  onGpsActiveChange
 }: MapControlsProps) {
   const [showEmergency, setShowEmergency] = useState(false)
-  const [isGpsActive, setIsGpsActive] = useState(false)
+  const [internalIsGpsActive, setInternalIsGpsActive] = useState(false)
   const geolocateControlRef = useRef<mapboxgl.GeolocateControl | null>(null)
+  
+  // Use external GPS state if provided, otherwise use internal state
+  const isGpsActive = onGpsActiveChange ? externalIsGpsActive : internalIsGpsActive
+  const setIsGpsActive = onGpsActiveChange || setInternalIsGpsActive
+
+  // Function to trigger GPS
+  const triggerGPS = () => {
+    if (geolocateControlRef.current) {
+      geolocateControlRef.current.trigger()
+    }
+  }
+
+  // Expose triggerGPS to window for parent access
+  useEffect(() => {
+    (window as any).triggerMapGPS = triggerGPS
+    return () => {
+      delete (window as any).triggerMapGPS
+    }
+  }, [])
 
   // Initialize GeolocateControl
   useEffect(() => {
@@ -70,25 +95,50 @@ export function MapControls({
     }, 100)
 
     // Listen for geolocate events
-    geolocateControl.on('geolocate', () => {
-      setIsGpsActive(true)
+    geolocateControl.on('geolocate', (e: any) => {
+      if (onGpsActiveChange) {
+        onGpsActiveChange(true)
+      } else {
+        setInternalIsGpsActive(true)
+      }
+      if (onLocationUpdate && e.coords) {
+        const coords: [number, number] = [e.coords.longitude, e.coords.latitude]
+        onLocationUpdate(coords)
+        console.log('📍 GPS location updated:', coords)
+      }
     })
 
     geolocateControl.on('trackuserlocationstart', () => {
-      setIsGpsActive(true)
+      if (onGpsActiveChange) {
+        onGpsActiveChange(true)
+      } else {
+        setInternalIsGpsActive(true)
+      }
     })
 
     geolocateControl.on('trackuserlocationend', () => {
-      setIsGpsActive(false)
+      if (onGpsActiveChange) {
+        onGpsActiveChange(false)
+      } else {
+        setInternalIsGpsActive(false)
+      }
     })
 
     geolocateControl.on('error', () => {
-      setIsGpsActive(false)
+      if (onGpsActiveChange) {
+        onGpsActiveChange(false)
+      } else {
+        setInternalIsGpsActive(false)
+      }
     })
 
     return () => {
-      if (geolocateControlRef.current) {
-        map.removeControl(geolocateControlRef.current)
+      if (geolocateControlRef.current && map) {
+        try {
+          map.removeControl(geolocateControlRef.current)
+        } catch (error) {
+          console.warn('Error removing geolocate control:', error)
+        }
         geolocateControlRef.current = null
       }
     }
