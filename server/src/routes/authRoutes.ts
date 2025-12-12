@@ -15,6 +15,9 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/magic-login', authController.magicLogin.bind(authController)) // Magic link login for temporary users
   fastify.post('/verify-email', authController.verifyEmail.bind(authController))
   fastify.post('/resend-verification', authController.resendVerification.bind(authController))
+  fastify.post('/forgot-password', authController.forgotPassword.bind(authController))
+  fastify.post('/validate-reset-token', authController.validateResetToken.bind(authController))
+  fastify.post('/reset-password', authController.resetPassword.bind(authController))
 
   // Admin-only routes (creating users manually)
   fastify.post('/register', { 

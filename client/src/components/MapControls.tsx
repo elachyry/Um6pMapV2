@@ -6,8 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Minus, AlignHorizontalSpaceAround, Siren, Phone, Locate } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/Card'
+import { Plus, Minus, AlignHorizontalSpaceAround, Siren, Locate, Calendar, CalendarPlus } from 'lucide-react'
 import mapboxgl from 'mapbox-gl'
 
 interface MapControlsProps {
@@ -26,6 +25,16 @@ interface MapControlsProps {
   onLocationUpdate?: (location: [number, number]) => void
   isGpsActive?: boolean
   onGpsActiveChange?: (active: boolean) => void
+  onEmergencyClick?: () => void
+  user?: {
+    id: string
+    email: string
+    firstName?: string
+    lastName?: string
+    userType?: string
+  }
+  onAgendaClick?: () => void
+  onReservationClick?: () => void
 }
 
 export function MapControls({ 
@@ -38,15 +47,21 @@ export function MapControls({
   emergencyContacts = [],
   onLocationUpdate,
   isGpsActive: externalIsGpsActive = false,
-  onGpsActiveChange
+  onGpsActiveChange,
+  onEmergencyClick,
+  user,
+  onAgendaClick,
+  onReservationClick
 }: MapControlsProps) {
-  const [showEmergency, setShowEmergency] = useState(false)
   const [internalIsGpsActive, setInternalIsGpsActive] = useState(false)
   const geolocateControlRef = useRef<mapboxgl.GeolocateControl | null>(null)
   
   // Use external GPS state if provided, otherwise use internal state
   const isGpsActive = onGpsActiveChange ? externalIsGpsActive : internalIsGpsActive
   const setIsGpsActive = onGpsActiveChange || setInternalIsGpsActive
+
+  // Check if user is permanent staff
+  const isPermanentStaff = user?.userType === 'PERMANENT' || user?.userType === 'ADMIN' || user?.userType === 'SUPER_ADMIN'
 
   // Function to trigger GPS
   const triggerGPS = () => {
@@ -73,6 +88,7 @@ export function MapControls({
         enableHighAccuracy: true
       },
       trackUserLocation: true,
+      showUserLocation: true,
       showUserHeading: true
     })
 
@@ -80,16 +96,17 @@ export function MapControls({
     map.addControl(geolocateControl, 'bottom-right')
     geolocateControlRef.current = geolocateControl
 
-    // Hide the default control button (use timeout to ensure DOM is ready)
+    // Hide only the control button, not the user location marker
     setTimeout(() => {
-      const geolocateContainer = document.querySelector('.mapboxgl-ctrl-geolocate')?.parentElement
-      if (geolocateContainer) {
-        (geolocateContainer as HTMLElement).style.display = 'none'
+      const geolocateButton = document.querySelector('.mapboxgl-ctrl-geolocate')
+      if (geolocateButton) {
+        // Hide only the button, not the parent container (which contains the marker)
+        (geolocateButton as HTMLElement).style.display = 'none'
       }
       
-      // Also try to hide by class
+      // Hide the control group if it only contains the geolocate button
       const ctrlGroup = document.querySelector('.mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-group')
-      if (ctrlGroup && ctrlGroup.querySelector('.mapboxgl-ctrl-geolocate')) {
+      if (ctrlGroup && ctrlGroup.children.length === 1 && ctrlGroup.querySelector('.mapboxgl-ctrl-geolocate')) {
         (ctrlGroup as HTMLElement).style.display = 'none'
       }
     }, 100)
@@ -180,14 +197,46 @@ export function MapControls({
     })
   }
 
-  const handleEmergencyCall = (phone: string) => {
-    window.location.href = `tel:${phone}`
-  }
 
   return (
     <>
       {/* Desktop Controls - Right Middle */}
       <div className="hidden lg:flex flex-col fixed right-6 xl:right-8 top-1/2 transform -translate-y-1/2 z-50 space-y-3">
+        {/* Reservation Button - Only for permanent staff */}
+        {isPermanentStaff && onReservationClick && (
+          <button
+            className="bg-primary/95 backdrop-blur-md hover:bg-white text-white hover:text-primary-600 p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border border-white/20"
+            onClick={onReservationClick}
+            title="Reserve Place"
+          >
+            <CalendarPlus className="w-6 h-6" />
+          </button>
+        )}
+
+        {/* Agenda Button */}
+        {onAgendaClick && (
+          <button
+            className="bg-white/95 backdrop-blur-md hover:bg-white text-gray-700 hover:text-primary-600 p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border border-white/20"
+            onClick={onAgendaClick}
+            title="View Agenda"
+          >
+            <Calendar className="w-6 h-6" />
+          </button>
+        )}
+
+        {/* Locate User */}
+        <button
+          className={`backdrop-blur-md p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border ${
+            isGpsActive 
+              ? 'bg-blue-500 hover:bg-blue-600 text-white border-blue-400/20' 
+              : 'bg-white/95 hover:bg-white text-gray-700 hover:text-primary-600 border-white/20'
+          }`}
+          onClick={handleLocateUser}
+          title="Locate Me"
+        >
+          <Locate className="w-6 h-6" />
+        </button>
+
         {/* Center Map */}
         <button
           className="bg-white/95 backdrop-blur-md hover:bg-white text-gray-700 hover:text-primary-600 p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border border-white/20"
@@ -215,23 +264,10 @@ export function MapControls({
           <Minus className="w-6 h-6" />
         </button>
 
-        {/* Locate User */}
-        <button
-          className={`backdrop-blur-md p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border ${
-            isGpsActive 
-              ? 'bg-blue-500 hover:bg-blue-600 text-white border-blue-400/20' 
-              : 'bg-white/95 hover:bg-white text-gray-700 hover:text-primary-600 border-white/20'
-          }`}
-          onClick={handleLocateUser}
-          title="Locate Me"
-        >
-          <Locate className="w-6 h-6" />
-        </button>
-
         {/* Emergency Contacts */}
-        {emergencyContacts.length > 0 && (
+        {emergencyContacts.length > 0 && onEmergencyClick && (
           <button
-            onClick={() => setShowEmergency(!showEmergency)}
+            onClick={onEmergencyClick}
             className="bg-red-500 hover:bg-red-600 text-white p-4 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 border border-red-400/20 backdrop-blur-md"
             title="Emergency Contacts"
           >
@@ -242,16 +278,30 @@ export function MapControls({
 
       {/* Mobile Controls - Bottom Right */}
       <div className={`lg:hidden fixed bottom-20 sm:bottom-24 right-4 z-50 flex flex-col space-y-3 transition-all duration-300 ${isPanelExpanded ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100 translate-y-0'}`}>
-        {/* Center Map */}
-        <button
-          className="bg-white/95 backdrop-blur-md hover:bg-white text-gray-700 hover:text-primary-600 p-3 rounded-xl shadow-lg transition-all duration-200 border border-white/20"
-          onClick={handleResetView}
-          title="Center Map"
-        >
-          <AlignHorizontalSpaceAround className="w-5 h-5" />
-        </button>
+        
+         {/* Reservation Button - Only for permanent staff */}
+        {isPermanentStaff && onReservationClick && (
+          <button
+            className="bg-primary/95 backdrop-blur-md hover:bg-white text-white hover:text-primary-600 p-3 rounded-xl shadow-lg transition-all duration-200 border border-white/20"
+            onClick={onReservationClick}
+            title="Reserve Place"
+          >
+            <CalendarPlus className="w-5 h-5" />
+          </button>
+        )}
+        
+        {/* Agenda Button */}
+        {onAgendaClick && (
+          <button
+            className="bg-white/95 backdrop-blur-md hover:bg-white text-gray-700 hover:text-primary-600 p-3 rounded-xl shadow-lg transition-all duration-200 border border-white/20"
+            onClick={onAgendaClick}
+            title="View Agenda"
+          >
+            <Calendar className="w-5 h-5" />
+          </button>
+        )}
 
-        {/* Locate User */}
+         {/* Locate User */}
         <button
           className={`backdrop-blur-md p-3 rounded-xl shadow-lg transition-all duration-200 border ${
             isGpsActive 
@@ -264,10 +314,19 @@ export function MapControls({
           <Locate className="w-5 h-5" />
         </button>
 
+        {/* Center Map */}
+        <button
+          className="bg-white/95 backdrop-blur-md hover:bg-white text-gray-700 hover:text-primary-600 p-3 rounded-xl shadow-lg transition-all duration-200 border border-white/20"
+          onClick={handleResetView}
+          title="Center Map"
+        >
+          <AlignHorizontalSpaceAround className="w-5 h-5" />
+        </button>
+
         {/* Emergency Contacts */}
-        {emergencyContacts.length > 0 && (
+        {emergencyContacts.length > 0 && onEmergencyClick && (
           <button
-            onClick={() => setShowEmergency(!showEmergency)}
+            onClick={onEmergencyClick}
             className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-xl shadow-lg transition-all duration-200 border border-red-400/20 backdrop-blur-md"
             title="Emergency Contacts"
           >
@@ -275,49 +334,6 @@ export function MapControls({
           </button>
         )}
       </div>
-
-      {/* Emergency Contacts Panel */}
-      {showEmergency && emergencyContacts.length > 0 && (
-        <div className="fixed top-1/2 -translate-y-1/2 right-20 lg:right-24 xl:right-28 z-50">
-          <Card className="w-80 shadow-xl">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Phone className="w-5 h-5 text-red-600" />
-                Emergency Contacts
-              </CardTitle>
-              <CardDescription>Quick access to emergency services</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {emergencyContacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div>
-                      <h3 className="font-semibold text-sm">{contact.name}</h3>
-                      <p className="text-xs text-muted-foreground">{contact.type}</p>
-                    </div>
-                    <button
-                      onClick={() => handleEmergencyCall(contact.phone)}
-                      className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors"
-                    >
-                      <Phone className="w-4 h-4" />
-                      Call
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowEmergency(false)}
-                className="w-full mt-3 px-4 py-2 border border-border rounded-lg hover:bg-muted/50 transition-colors text-sm"
-              >
-                Close
-              </button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </>
   )
 }

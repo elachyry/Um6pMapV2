@@ -46,6 +46,20 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
       setIsSourceGPS(true)
     }
   }, [isGpsActive, userLocation])
+
+  // Auto-set destination when initialDestination is provided (from FeatureInfoPanel)
+  useEffect(() => {
+    if (initialDestination && !selectedDestination) {
+      setSelectedDestination({
+        id: 'initial-destination',
+        name: initialDestination.name,
+        type: 'location',
+        coordinates: initialDestination.coordinates
+      } as any)
+      console.log('🎯 Auto-set destination from FeatureInfoPanel:', initialDestination.name)
+    }
+  }, [initialDestination])
+
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [showSourceSuggestions, setShowSourceSuggestions] = useState(false)
   const [showDestSuggestions, setShowDestSuggestions] = useState(false)
@@ -61,19 +75,29 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
 
   // Auto-calculate route when both source and destination are selected
   useEffect(() => {
-    if (onGetDirections && (selectedSource || isSourceGPS) && selectedDestination && !hasCalculatedRef.current) {
+    // Validate that we have valid source and destination
+    const hasValidSource = selectedSource || (isSourceGPS && userLocation && userLocation[0] !== 0 && userLocation[1] !== 0)
+    
+    if (onGetDirections && hasValidSource && selectedDestination && !hasCalculatedRef.current) {
       const source = isSourceGPS
-        ? { name: 'My Location', coordinates: userLocation || [0, 0], type: 'location' as const }
+        ? { name: 'My Location', coordinates: userLocation!, type: 'location' as const }
         : selectedSource
       
       hasCalculatedRef.current = true
       setIsCalculating(true)
       
+      console.log('🗺️ Auto-calculating route from', source?.name, 'to', selectedDestination.name)
+      
       // Small delay to ensure UI updates
       const timer = setTimeout(async () => {
-        await onGetDirections(source, selectedDestination)
-        // Hide calculating message after route is drawn
-        setTimeout(() => setIsCalculating(false), 1000)
+        try {
+          await onGetDirections(source, selectedDestination)
+          // Hide calculating message after route is drawn
+          setTimeout(() => setIsCalculating(false), 1000)
+        } catch (error) {
+          console.error('❌ Route calculation failed:', error)
+          setIsCalculating(false)
+        }
       }, 300)
 
       return () => clearTimeout(timer)
@@ -219,8 +243,9 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
   }
 
   const handleUseMyLocation = () => {
-    if (userLocation) {
+    if (userLocation && userLocation[0] !== 0 && userLocation[1] !== 0) {
       // Location already available, use it
+      console.log('📍 Using existing location:', userLocation)
       setSourceInput('My Location')
       setIsSourceGPS(true)
       // Notify parent that GPS is active
@@ -229,18 +254,27 @@ export function DirectionsPanel({ onClose, initialDestination, userLocation, bui
       }
     } else {
       // Request location from parent (triggers GPS)
+      console.log('📍 Requesting GPS location...')
       if (onRequestLocation) {
         onRequestLocation()
-        // Optimistically set the input
+        // Set the input text but DON'T set isSourceGPS yet
+        // Wait for userLocation to be updated
         setSourceInput('My Location')
-        setIsSourceGPS(true)
-        // Notify parent that GPS is active
+        // Notify parent that GPS is active (this will trigger location fetch)
         if (onGpsActiveChange) {
           onGpsActiveChange(true)
         }
       }
     }
   }
+
+  // Auto-set isSourceGPS when userLocation becomes available
+  useEffect(() => {
+    if (sourceInput === 'My Location' && userLocation && userLocation[0] !== 0 && userLocation[1] !== 0 && !isSourceGPS) {
+      console.log('📍 GPS location acquired, setting isSourceGPS:', userLocation)
+      setIsSourceGPS(true)
+    }
+  }, [userLocation, sourceInput])
 
   const handleVoiceSearch = (_field: 'source' | 'destination') => {
     // Voice search implementation placeholder

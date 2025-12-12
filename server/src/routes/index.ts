@@ -19,6 +19,8 @@ import boundaryRoutes from './boundaryRoutes'
 import emergencyContactRoutes from './emergencyContactRoutes'
 import { cacheRoutes } from './v1/cacheRoutes'
 import backupRoutes from './v1/backupRoutes'
+import reservationRoutes from './reservationRoutes'
+import { savedPlacesRoutes } from './savedPlacesRoutes'
 
 export async function registerRoutes(fastify: FastifyInstance) {
   // API prefix
@@ -185,9 +187,28 @@ export async function registerRoutes(fastify: FastifyInstance) {
       }
     })
     
+    instance.register(reservationRoutes, { 
+      prefix: '/reservations',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
+    instance.register(savedPlacesRoutes, { 
+      prefix: '/saved-places',
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: '1 minute'
+        }
+      }
+    })
+    
     // TODO: Add more routes:
     // instance.register(eventRoutes, { prefix: '/events' })
-    // instance.register(reservationRoutes, { prefix: '/reservations' })
     // instance.register(accessRequestRoutes, { prefix: '/access-requests' })
     
   }, { prefix: '/api' })

@@ -8,8 +8,11 @@
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { authService } from '@/services/authService'
 import { auditService } from '@/services/auditService'
+import { userRepository } from '@/repositories/userRepository'
+import { sendEmail } from '@/services/emailService'
 import { ValidationError } from '@/utils/errors'
 import crypto from 'crypto'
+import bcrypt from 'bcrypt'
 
 export class AuthController {
   /**
@@ -343,6 +346,227 @@ export class AuthController {
     return reply.send({
       message: 'Logged out successfully',
     })
+  }
+
+  /**
+   * Forgot password - send reset email
+   * POST /api/auth/forgot-password
+   */
+  async forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { email } = request.body as { email: string }
+
+      // Find user by email
+      const user = await userRepository.findByEmail(email)
+      
+      // Tell user if email doesn't exist
+      if (!user) {
+        return reply.status(404).send({
+          error: 'No account found with that email address',
+        })
+      }
+
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString('hex')
+      const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hour
+
+      // Save token to database
+      await userRepository.update(user.id, {
+        resetPasswordToken: resetToken,
+        resetPasswordTokenExpiry: resetTokenExpiry,
+      })
+
+      // Send reset email
+      const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`
+      
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: 'Password Reset Request - UM6P Map',
+          html: `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password - UM6P Map</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f9fafb; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #EA3B15 0%, #C02D0F 100%); padding: 30px 40px; text-align: center;">
+      <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">Reset Your Password</h1>
+    </div>
+    
+    <!-- Content -->
+    <div style="padding: 40px;">
+      <h2 style="color: #111827; font-size: 20px; margin: 0 0 20px 0;">Hello ${user.firstName || 'User'} ${user.lastName || ''},</h2>
+      
+      <p style="color: #374151; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+        You requested to reset your password for your UM6P Map account. Click the button below to create a new password:
+      </p>
+      
+      <!-- Reset Button -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${resetUrl}" style="display: inline-block; background-color: #EA3B15; color: white; text-decoration: none; padding: 15px 40px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+          Reset Password
+        </a>
+      </div>
+      
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 20px 0;">
+        Or copy and paste this link into your browser:
+      </p>
+      <p style="color: #EA3B15; font-size: 14px; word-break: break-all; background-color: #f3f4f6; padding: 12px; border-radius: 4px; margin: 0 0 20px 0;">
+        ${resetUrl}
+      </p>
+      
+      <!-- Warning Box -->
+      <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+        <p style="color: #92400e; font-size: 14px; margin: 0;">
+          <strong>⏰ Important:</strong> This password reset link will expire in 1 hour.
+        </p>
+      </div>
+      
+      <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 20px 0;">
+        If you didn't request a password reset, please ignore this email. Your password will remain unchanged.
+      </p>
+      
+      <!-- Footer -->
+      <div style="margin-top: 40px; padding-top: 30px; border-top: 1px solid #e5e7eb; text-align: center;">
+        <p style="color: #6b7280; font-size: 14px; margin: 0;">Best regards,<br><strong>UM6P Map Team</strong></p>
+        <p style="color: #9ca3af; font-size: 12px; margin: 15px 0 0 0;">This is an automated message. Please do not reply to this email.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+          `,
+        })
+
+        return reply.send({
+          message: 'Password reset link has been sent to your email',
+        })
+      } catch (emailError: any) {
+        // Email failed to send, but token is saved
+        request.log.error('Failed to send reset email:', emailError)
+        
+        // Return success with the reset link for development/testing
+        if (process.env.NODE_ENV === 'development') {
+          return reply.send({
+            message: 'Email service not configured. Use this link to reset your password:',
+            resetUrl: resetUrl,
+          })
+        }
+        
+        return reply.status(500).send({
+          error: 'Failed to send reset email. Please contact support.',
+        })
+      }
+    } catch (error: any) {
+      request.log.error(error)
+      return reply.status(500).send({
+        error: 'Failed to process password reset request',
+      })
+    }
+  }
+
+  /**
+   * Validate reset token
+   * POST /api/auth/validate-reset-token
+   */
+  async validateResetToken(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { token } = request.body as { token: string }
+
+      if (!token) {
+        return reply.status(400).send({
+          error: 'Reset token is required',
+        })
+      }
+
+      // Find user with this token
+      const user = await userRepository.findByResetToken(token)
+
+      if (!user || !user.resetPasswordTokenExpiry) {
+        return reply.status(400).send({
+          error: 'Invalid or expired reset token',
+        })
+      }
+
+      // Check if token is expired
+      if (new Date() > user.resetPasswordTokenExpiry) {
+        return reply.status(400).send({
+          error: 'Reset token has expired',
+        })
+      }
+
+      return reply.send({
+        message: 'Token is valid',
+      })
+    } catch (error: any) {
+      request.log.error(error)
+      return reply.status(500).send({
+        error: 'Failed to validate reset token',
+      })
+    }
+  }
+
+  /**
+   * Reset password with token
+   * POST /api/auth/reset-password
+   */
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { token, password } = request.body as { token: string; password: string }
+
+      if (!token || !password) {
+        return reply.status(400).send({
+          error: 'Token and password are required',
+        })
+      }
+
+      // Validate password
+      if (password.length < 8) {
+        return reply.status(400).send({
+          error: 'Password must be at least 8 characters long',
+        })
+      }
+
+      // Find user with this token
+      const user = await userRepository.findByResetToken(token)
+
+      if (!user || !user.resetPasswordTokenExpiry) {
+        return reply.status(400).send({
+          error: 'Invalid or expired reset token',
+        })
+      }
+
+      // Check if token is expired
+      if (new Date() > user.resetPasswordTokenExpiry) {
+        return reply.status(400).send({
+          error: 'Reset token has expired',
+        })
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(password, 10)
+
+      // Update password and clear reset token
+      await userRepository.update(user.id, {
+        password: hashedPassword,
+        resetPasswordToken: null,
+        resetPasswordTokenExpiry: null,
+      })
+
+      return reply.send({
+        message: 'Password has been reset successfully',
+      })
+    } catch (error: any) {
+      request.log.error(error)
+      return reply.status(500).send({
+        error: 'Failed to reset password',
+      })
+    }
   }
 }
 

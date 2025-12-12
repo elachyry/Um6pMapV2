@@ -49,6 +49,10 @@ model User {
   verificationToken       String?   @unique
   verificationTokenExpiry DateTime?
   
+  // Password reset
+  resetPasswordToken       String?   @unique
+  resetPasswordTokenExpiry DateTime?
+  
   // Relations
   campusId String?
   campus   Campus? @relation(fields: [campusId], references: [id])
@@ -179,6 +183,7 @@ model Campus {
   paths     Path[]
   boundaries Boundary[]
   emergencyContacts EmergencyContact[]
+  reservations Reservation[]
   
   @@index([slug])
   @@index([isActive])
@@ -226,7 +231,6 @@ model Buildings {
   documents    BuildingDocument[]
   amenities    BuildingAmenity[]
   events       Event[]
-  reservations Reservation[]
   pois         POI[]
   
   @@unique([campusId, slug])
@@ -275,7 +279,6 @@ model OpenSpace {
   documents    OpenSpaceDocument[]
   amenities    OpenSpaceAmenity[]
   events       Event[]
-  reservations Reservation[]
   pois         POI[]
   
   @@unique([campusId, slug])
@@ -323,7 +326,6 @@ model Location {
   updatedAt DateTime @updatedAt
   
   building       Buildings          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  reservations   Reservation[]
   images         LocationImage[]
   documents      LocationDocument[]
   contactInfo    ContactInfo[]
@@ -494,48 +496,131 @@ model EventMedia {
   @@index([eventId])
 }
 
-// Reservations
+// Reservations - UM6P Event Application Form
 model Reservation {
-  id          String            @id @default(uuid())
+  id          String   @id @default(uuid())
   userId      String
-  status      String @default("PENDING")
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, CANCELLED, COMPLETED
   
-  // Resource
-  resourceType String // "building", "location", "openSpace"
-  buildingId   String?
-  locationId   String?
-  openSpaceId  String?
+  // 1. Applicant Information
+  projectLeaderName  String
+  projectLeaderEmail String
+  projectLeaderPhone String?
+  department         String?
+  entity             String?
   
-  // Timing
-  startDate DateTime
-  endDate   DateTime
-  startTime String
-  endTime   String
+  // 2. Event Details
+  eventTitle        String
+  eventNature       String? // internal or external
+  eventType         String  // institutional or scientific
+  relevantCommittee String? // institutional or scientific
+  eventDescription  String?
+  startDate         String?
+  startTime         String?
+  endDate           String?
+  endTime           String?
+  estimatedDuration String?
   
-  // Details
-  purpose     String
-  notes       String?
-  capacity    Int?
+  // 3. Event History
+  hasPreviousEdition  Boolean?
+  previousEditionYear String?
+  participantCount    String? // <300, 400-500, >500
+  mediaVisibility     String? // low, medium, high
+  hasVIPGuests        Boolean?
+  vipGuestsDetails    String?
   
-  // Approval
-  reviewedBy String?
-  reviewedAt DateTime?
-  reviewNotes String?
+  // 4. Objectives
+  mainObjectives       String? // JSON array
+  mainObjectivesOther  String?
+  secondaryObjectives  String? // JSON array
+  
+  // 5. Scope & Expected Impact
+  geographicalScope String? // internal, national, international
+  expectedImpact    String? // JSON array
+  
+  // 6. Target Audience
+  targetProfiles           String? // JSON array
+  expectedParticipantCount String?
+  
+  // 7. Governance & Partners
+  eventManagerName     String?
+  eventManagerPosition String?
+  eventManagerContact  String?
+  organizingCommittee  String? // JSON array of {name, role, entity}
+  associatedPartners   String?
+  protocolSupportRequired Boolean?
+  protocolSupport      String? // JSON array
+  
+  // 8. Preliminary Program
+  programFormat       String? // JSON array
+  programFormatOther  String?
+  speakersStatus      String?
+  sideActivities      String? // JSON array
+  sideActivitiesOther String?
+  
+  // 9. Logistics & Infrastructure
+  requiredEquipment          String? // JSON array
+  requiredEquipmentOther     String?
+  needsTransportAccommodation Boolean?
+  transportAccommodationDetails String?
+  otherSpecificNeeds         Boolean?
+  otherSpecificNeedsDetails  String?
+  
+  // 10. Communication & Visibility
+  communicationObjectives      String? // JSON array
+  communicationObjectivesOther String?
+  plannedActions               String? // JSON array
+  plannedActionsOther          String?
+  expectedVisibilityLevel      String?
+  
+  // 11. Provisional Budget
+  estimatedBudget       String?
+  agencyEstimate        String?
+  cateringEstimate      String?
+  transportEstimate     String?
+  accommodationEstimate String?
+  flightEstimate        String?
+  overallEstimate       String?
+  fundingSources        String? // JSON array
+  fundingSourcesOther   String?
+  estimatedSponsorship  String?
+  budgetComments        String?
+  
+  // 12. Event Location
+  selectedCampusId      String?
+  selectedLocationId    String?
+  selectedLocationType  String? // location, building, openSpace
+  selectedLocationName  String?
+  
+  // 13. Supporting Documents
+  documents String? // JSON array of {name, url, type}
+  
+  // 14. Validation & Follow-up
+  validationStatus  String  @default("pending")
+  committeeComments String?
+  
+  // Approval workflow
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewNotes     String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectedBy      String?
+  rejectedAt      DateTime?
+  rejectionReason String?
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
-  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  building Buildings? @relation(fields: [buildingId], references: [id])
-  location Location?  @relation(fields: [locationId], references: [id])
-  openSpace OpenSpace? @relation(fields: [openSpaceId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus    Campus?    @relation(fields: [selectedCampusId], references: [id])
   
   @@index([userId])
-  @@index([buildingId])
-  @@index([locationId])
-  @@index([openSpaceId])
+  @@index([selectedCampusId])
   @@index([status])
   @@index([startDate])
+  @@index([eventType])
+  @@index([validationStatus])
 }
 
 // Access Requests
@@ -832,4 +917,18 @@ model EmergencyContact {
   @@index([campusId])
   @@index([isActive])
   @@index([displayOrder])
+}
+
+// Saved Places Model
+model SavedPlace {
+  id        String   @id @default(uuid())
+  userId    String
+  placeId   String
+  placeType String   // "building", "openSpace", "location"
+  placeName String
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([placeId])
+  @@unique([userId, placeId, placeType])
 }

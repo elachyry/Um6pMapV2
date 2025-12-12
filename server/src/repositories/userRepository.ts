@@ -54,6 +54,15 @@ export class UserRepository {
   }
 
   /**
+   * Find user by reset password token
+   */
+  async findByResetToken(token: string): Promise<User | null> {
+    return prisma.user.findUnique({
+      where: { resetPasswordToken: token },
+    })
+  }
+
+  /**
    * Create new user
    */
   async create(data: Prisma.UserCreateInput): Promise<User> {

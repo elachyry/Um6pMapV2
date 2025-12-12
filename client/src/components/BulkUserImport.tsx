@@ -94,7 +94,7 @@ export function BulkUserImport({ onClose, onSuccess }: BulkUserImportProps) {
   const downloadTemplate = () => {
     // Create CSV template
     const headers = ['firstName', 'lastName', 'email', 'phone', 'department', 'userCategory']
-    const example = ['John', 'Doe', 'john.doe@um6p.ma', '+212600000000', 'Computer Science', 'STUDENT']
+    const example = ['Mohammed', 'Elachyry', 'mohammed.elachyry@um6p.ma', '+212600000000', '1337', 'STUDENT']
     
     const csv = [headers.join(','), example.join(',')].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })

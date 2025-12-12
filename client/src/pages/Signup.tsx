@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Building2, Mail, Lock, User, Phone, Eye, EyeOff, AlertCircle, MapPin } from 'lucide-react'
+import { Mail, Lock, User, AlertCircle, Eye, EyeOff, Phone, MapPin, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { apiClient } from '@/api/client'
 
@@ -107,11 +107,11 @@ export default function Signup() {
       <div className="w-full max-w-2xl">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-            <Building2 className="w-10 h-10 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">Create UM6P Account</h1>
-          <p className="text-muted-foreground mt-2">Join the UM6P campus community</p>
+          <img 
+            src="/um6p-logo.png" 
+            alt="UM6P Logo" 
+            className="w-60 h-20 object-contain"
+          />
         </div>
 
         {/* Signup Card */}
@@ -138,7 +138,7 @@ export default function Signup() {
                     type="text"
                     value={formData.firstName}
                     onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                    placeholder="John"
+                    placeholder="Mohammed"
                     required
                     className="w-full pl-10 pr-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                     disabled={isLoading}
@@ -157,7 +157,7 @@ export default function Signup() {
                     type="text"
                     value={formData.lastName}
                     onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                    placeholder="Doe"
+                    placeholder="Elachyry"
                     required
                     className="w-full pl-10 pr-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                     disabled={isLoading}

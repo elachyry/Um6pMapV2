@@ -432,6 +432,45 @@ This is an automated message. Please do not reply to this email.
 }
 
 /**
+ * Send generic email
+ * Purpose: Send any email with custom content
+ * Inputs: email options (to, subject, html, text)
+ * Outputs: void (throws on error)
+ */
+export async function sendEmail(options: {
+  to: string
+  subject: string
+  html: string
+  text?: string
+}): Promise<void> {
+  if (!SMTP_USER || !SMTP_PASS) {
+    console.warn('⚠️  SMTP credentials not configured. Email not sent.')
+    console.log('📧 Would send email to:', options.to)
+    console.log('📝 Subject:', options.subject)
+    return
+  }
+
+  console.log(`📧 Sending email to ${options.to}...`)
+
+  const mailOptions = {
+    from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    to: options.to,
+    subject: options.subject,
+    text: options.text || '',
+    html: options.html,
+  }
+
+  try {
+    const info = await transporter.sendMail(mailOptions)
+    console.log(`✅ Email sent successfully to ${options.to}`)
+    console.log(`📬 Message ID: ${info.messageId}`)
+  } catch (error: any) {
+    console.error('❌ Failed to send email:', error)
+    throw new Error('Failed to send email')
+  }
+}
+
+/**
  * Generate secure random password
  * Purpose: Create a strong temporary password
  * Inputs: length (default 12)

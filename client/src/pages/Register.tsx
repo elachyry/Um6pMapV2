@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Building2, Mail, Lock, AlertCircle, Eye, EyeOff, User } from 'lucide-react'
+import { Mail, Lock, AlertCircle, Eye, EyeOff, User } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 
 export default function Register() {
@@ -65,11 +65,11 @@ export default function Register() {
       <div className="w-full max-w-md">
         {/* Logo & Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4">
-            <Building2 className="w-10 h-10 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Create Account</h1>
-          <p className="text-muted-foreground">Join UM6P Map Platform</p>
+          <img 
+            src="/um6p-logo.png" 
+            alt="UM6P Logo" 
+            className="w-60 h-20 object-contain"
+          />
         </div>
 
         {/* Register Form Card */}
@@ -96,7 +96,7 @@ export default function Register() {
                   value={formData.firstName}
                   onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                  placeholder="John"
+                  placeholder="Mohammed"
                   required
                   autoComplete="given-name"
                 />
@@ -116,7 +116,7 @@ export default function Register() {
                   value={formData.lastName}
                   onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 bg-background border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                  placeholder="Doe"
+                  placeholder="Elachyry"
                   required
                   autoComplete="family-name"
                 />

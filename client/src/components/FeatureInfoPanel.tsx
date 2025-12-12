@@ -4,7 +4,9 @@
  * Displays images, details, locations, and documents in a bottom sheet
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/useToast'
+import { useAuthStore } from '@/stores/authStore'
 import { 
   X, 
   ChevronLeft, 
@@ -34,10 +36,135 @@ interface FeatureInfoPanelProps {
 }
 
 export function FeatureInfoPanel({ feature, featureType, isLoading = false, onClose, onExpandChange, onDirections }: FeatureInfoPanelProps) {
+  const toast = useToast()
+  const { user } = useAuthStore()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [activeTab, setActiveTab] = useState<'overview' | 'hours' | 'locations' | 'services'>('overview')
   const [expandedLocationId, setExpandedLocationId] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSharing, setIsSharing] = useState(false)
+
+  // Notify parent that panel is expanded on mount (for desktop)
+  useEffect(() => {
+    onExpandChange?.(true)
+    
+    // Cleanup: notify parent that panel is collapsed on unmount
+    return () => {
+      onExpandChange?.(false)
+    }
+  }, [onExpandChange])
+
+  // Check if item is saved
+  useEffect(() => {
+    if (feature?.id && user?.id) {
+      checkIfSaved()
+    }
+  }, [feature?.id, user?.id])
+
+  const checkIfSaved = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/saved-places/check?userId=${user?.id}&placeId=${feature.id}&placeType=${featureType}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        }
+      )
+      const result = await response.json()
+      setIsSaved(result.isSaved || false)
+    } catch (error) {
+      console.error('Failed to check saved status:', error)
+    }
+  }
+
+  const handleSaveToggle = async () => {
+    if (!user) {
+      toast.error('Please login to save places')
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      if (isSaved) {
+        // Unsave
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/saved-places`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              userId: user.id,
+              placeId: feature.id,
+              placeType: featureType
+            })
+          }
+        )
+        
+        if (response.ok) {
+          setIsSaved(false)
+          toast.success('Removed from saved places')
+        }
+      } else {
+        // Save
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/saved-places`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              userId: user.id,
+              placeId: feature.id,
+              placeType: featureType,
+              placeName: feature.name
+            })
+          }
+        )
+        
+        if (response.ok) {
+          setIsSaved(true)
+          toast.success('Saved to your places')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to toggle save:', error)
+      toast.error('Failed to save place')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleShare = async () => {
+    setIsSharing(true)
+    try {
+      // Generate shareable link with proper URL encoding
+      const baseUrl = window.location.origin
+      const params = new URLSearchParams({
+        placeId: feature.id,
+        placeType: featureType
+      })
+      const shareUrl = `${baseUrl}/map?${params.toString()}`
+      
+      console.log('📤 Sharing URL:', shareUrl)
+      
+      // Always copy to clipboard (avoid text contamination from native share)
+      await navigator.clipboard.writeText(shareUrl)
+      toast.success('Link copied to clipboard!')
+    } catch (error: any) {
+      console.error('Failed to share:', error)
+      toast.error('Failed to copy link')
+    } finally {
+      setIsSharing(false)
+    }
+  }
 
   if (!feature) return null
 
@@ -227,53 +354,43 @@ export function FeatureInfoPanel({ feature, featureType, isLoading = false, onCl
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors min-w-fit">
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-                <Navigation className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <span className="text-xs font-medium">Directions</span>
-            </button>
-            
-            <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-muted transition-colors min-w-fit">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <Bookmark className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-medium">Save</span>
-            </button>
-            
             {onDirections && (
               <button 
                 onClick={onDirections}
-                className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-primary-50 transition-colors min-w-fit"
+                className="flex flex-col items-center gap-1 px-4 py-4 rounded-full bg-primary/10   hover:bg-primary/20 transition-colors min-w-fit"
               >
-                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
-                  <Navigation className="w-5 h-5 text-primary-600" />
-                </div>
-                <span className="text-xs font-medium text-primary-600">Directions</span>
+                <Navigation className="w-6 h-6 text-primary" />
+                {/* <span className="text-xs font-medium">Directions</span> */}
               </button>
             )}
             
-            <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-muted transition-colors min-w-fit">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <MapPin className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-medium">Nearby</span>
+            <button 
+              onClick={handleSaveToggle}
+              disabled={isSaving}
+              className="flex flex-col items-center gap-1 px-4 py-4 hover:bg-muted rounded-full transition-colors min-w-fit"
+            >
+              <Bookmark className={`w-6 h-6 ${
+                isSaved ? 'text-primary fill-current' : 'text-muted-foreground'
+              }`} />
+              {/* <span className="text-xs font-medium">{isSaved ? 'Saved' : 'Save'}</span> */}
             </button>
             
+          
+            
             {feature.phone && (
-              <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-muted transition-colors min-w-fit">
-                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                  <Phone className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-medium">Call</span>
+              <button className="flex flex-col items-center gap-1 px-4 py-4 hover:bg-muted rounded-full transition-colors min-w-fit">
+                <Phone className="w-6 h-6 text-muted-foreground" />
+                {/* <span className="text-xs font-medium">Call</span> */}
               </button>
             )}
             
-            <button className="flex flex-col items-center gap-1 px-4 py-2 rounded-full hover:bg-muted transition-colors min-w-fit">
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <Share2 className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-medium">Share</span>
+            <button 
+              onClick={handleShare}
+              disabled={isSharing}
+              className="flex flex-col items-center gap-1 px-4 py-4 hover:bg-muted rounded-full transition-colors min-w-fit disabled:opacity-50"
+            >
+              <Share2 className="w-6 h-6 text-muted-foreground" />
+              {/* <span className="text-xs font-medium">Share</span> */}
             </button>
           </div>
         </div>

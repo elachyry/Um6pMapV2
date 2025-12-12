@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Building2, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 
 export default function Login() {
@@ -43,6 +43,16 @@ export default function Login() {
       // Get the updated user from store after login
       const currentUser = useAuthStore.getState().user
       
+      // Check for saved redirect URL (from shared links)
+      const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
+      console.log('🔗 Login: Checking for redirect URL:', redirectUrl)
+      if (redirectUrl) {
+        console.log('🔗 Login: Redirecting to:', redirectUrl)
+        sessionStorage.removeItem('redirectAfterLogin')
+        window.location.href = redirectUrl
+        return
+      }
+      
       // Redirect based on user type
       if (currentUser?.userType === 'ADMIN' || currentUser?.userType === 'SUPER_ADMIN') {
         navigate('/dashboard')
@@ -64,11 +74,11 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-            <Building2 className="w-10 h-10 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">UM6P Admin</h1>
-          <p className="text-muted-foreground mt-2">Sign in to your account</p>
+          <img 
+            src="/um6p-logo.png" 
+            alt="UM6P Logo" 
+            className="w-60 h-20 object-contain"
+          />
         </div>
 
         {/* Login Card */}
@@ -139,17 +149,16 @@ export default function Login() {
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary"
+                  className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary accent-primary-500 "
                 />
                 <span className="text-muted-foreground">Remember me</span>
               </label>
-              <button
-                type="button"
+              <Link
+                to="/forgot-password"
                 className="text-primary hover:underline"
-                disabled={isLoading}
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
 
             {/* Submit Button */}

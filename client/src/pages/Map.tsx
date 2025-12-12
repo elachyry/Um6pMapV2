@@ -5,7 +5,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react'
-import { Sun, Moon, Languages, LogOut, Settings, Menu, X, User, Loader2 } from 'lucide-react'
+import { Sun, Moon, Languages, LogOut, Settings, Menu, X, User, Loader2, Calendar, Bookmark } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCampusStore } from '@/stores/campusStore'
@@ -24,11 +24,17 @@ import { FeatureInfoPanel } from '@/components/FeatureInfoPanel'
 import { MapControls } from '@/components/MapControls'
 import { MapSearch } from '@/components/MapSearch'
 import { DirectionsPanel } from '@/components/DirectionsPanel'
+import { TurnByTurnPanel } from '@/components/TurnByTurnPanel'
+import { EmergencyContactsPanel } from '@/components/EmergencyContactsPanel'
+import { ReservationForm } from '@/components/ReservationForm'
+import { MyReservationsPanel } from '@/components/MyReservationsPanel'
+import { SavedPlacesPanel } from '@/components/SavedPlacesPanel'
 import { use3DModels } from '@/hooks/use3DModels'
 import { getAllEmergencyContacts } from '@/api/emergencyContactApi'
 import { getPOIs } from '@/api/poiApi'
 import { getAllPaths } from '@/api/pathApi'
 import { usePathfinding } from '@/hooks/usePathfinding'
+import { CreateReservationInput } from '@/models/reservation'
 
 // Mapbox access token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiZWxhY2hyeSIsImEiOiJjbTRqYXlqMmswMGNkMmtzNnBhMjBzNDVrIn0.pFBDxJ3Jc-TKMfZXMYB-Gg'
@@ -67,6 +73,39 @@ export default function Map() {
   const [previousMapPosition, setPreviousMapPosition] = useState<any>(null)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
   const [isGpsActive, setIsGpsActive] = useState(false)
+  const [showTurnByTurn, setShowTurnByTurn] = useState(false)
+  const [currentRoute, setCurrentRoute] = useState<any>(null)
+  const [routeSource, setRouteSource] = useState<string>('')
+  const [routeDestination, setRouteDestination] = useState<string>('')
+  const [showEmergencyPanel, setShowEmergencyPanel] = useState(false)
+  
+  // Get URL parameters for shared links - store in state to preserve across re-renders
+  const [sharedPlaceId] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const placeId = urlParams.get('placeId')
+    console.log('🔗 Initializing sharedPlaceId:', placeId)
+    
+    // If we have shared link params but no user, save URL immediately before any navigation
+    if (placeId && !user) {
+      const currentUrl = window.location.href
+      console.log('🔗 No user detected on mount - saving URL immediately:', currentUrl)
+      sessionStorage.setItem('redirectAfterLogin', currentUrl)
+    }
+    
+    return placeId
+  })
+  const [sharedPlaceType] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const placeType = urlParams.get('placeType') as 'building' | 'openSpace' | null
+    console.log('🔗 Initializing sharedPlaceType:', placeType)
+    return placeType
+  })
+  
+  // Sidebar and reservation states
+  const [showReservationForm, setShowReservationForm] = useState(false)
+  const [showMyReservations, setShowMyReservations] = useState(false)
+  const [showSavedPlaces, setShowSavedPlaces] = useState(false)
+  const [sharedLinkProcessed, setSharedLinkProcessed] = useState(false)
   
   // Map data state
   const [pois, setPOIs] = useState<any[]>([])
@@ -190,6 +229,60 @@ export default function Map() {
       console.log('✅ WebSocket connected for real-time updates')
     }
   })
+
+  // Handle shared links - check authentication and redirect if needed
+  useEffect(() => {
+    const loadSharedPlace = async () => {
+      console.log('🔗 Shared link effect running:', {
+        sharedPlaceId,
+        sharedPlaceType,
+        sharedLinkProcessed,
+        hasUser: !!user,
+        mapReady: !!map.current,
+        mapLayersReady,
+        buildingsCount: buildings.length,
+        openSpacesCount: openSpaces.length
+      })
+
+      if (sharedPlaceId && sharedPlaceType && !sharedLinkProcessed) {
+        if (!user) {
+          console.log('🔗 No user - redirecting to login')
+          console.log('🔗 Saving redirect URL:', window.location.href)
+          // User not logged in - save the shared link and redirect to login
+          sessionStorage.setItem('redirectAfterLogin', window.location.href)
+          console.log('🔗 Saved to sessionStorage:', sessionStorage.getItem('redirectAfterLogin'))
+          navigate('/login')
+        } else {
+          // User is logged in - load the shared place after map is ready
+          const dataReady = sharedPlaceType === 'building' 
+            ? buildings.length > 0 
+            : openSpaces.length > 0
+          
+          console.log('🔗 Checking readiness:', {
+            mapExists: !!map.current,
+            mapLayersReady,
+            dataReady,
+            placeType: sharedPlaceType
+          })
+          
+          if (map.current && mapLayersReady && dataReady) {
+            console.log('🔗 All conditions met - Loading shared place:', sharedPlaceId, sharedPlaceType)
+            try {
+              await handleSavedPlaceClick(sharedPlaceId, sharedPlaceType)
+              console.log('🔗 Successfully loaded shared place')
+              setSharedLinkProcessed(true)
+            } catch (error) {
+              console.error('🔗 Failed to load shared place:', error)
+            }
+          } else {
+            console.log('🔗 Waiting for conditions to be met...')
+          }
+        }
+      }
+    }
+    
+    loadSharedPlace()
+  }, [sharedPlaceId, sharedPlaceType, user, mapLayersReady, buildings, openSpaces, sharedLinkProcessed])
 
   // Load map data with caching
   useEffect(() => {
@@ -328,6 +421,33 @@ export default function Map() {
         let hoverColor = '#FFA500' // Default hover color (orange)
         let highlightColor = '#FF0000' // Default highlight color (red)
 
+        // Helper function to get dark variant of a map style
+        const getDarkVariant = (style: string): string => {
+          // Light styles that should switch to navigation-night
+          const navigationStyles = [
+            'mapbox://styles/mapbox/streets-v12',
+            'mapbox://styles/mapbox/outdoors-v12',
+            'mapbox://styles/mapbox/navigation-day-v1'
+          ]
+          
+          if (navigationStyles.includes(style)) {
+            return 'mapbox://styles/mapbox/navigation-night-v1'
+          }
+          
+          // Default to dark-v11 for other styles
+          return 'mapbox://styles/mapbox/dark-v11'
+        }
+
+        // Helper function to check if a style is already dark
+        const isDarkStyle = (style: string): boolean => {
+          const darkStyles = [
+            'mapbox://styles/mapbox/navigation-night-v1',
+            'mapbox://styles/mapbox/dark-v11',
+            'mapbox://styles/mapbox/satellite-streets-v12' // Satellite is dark by nature
+          ]
+          return darkStyles.some(darkStyle => style.includes(darkStyle.split('/').pop() || ''))
+        }
+
         if (campus) {
           // Parse mapCenter from campus settings
           if (campus.mapCenter) {
@@ -346,9 +466,23 @@ export default function Map() {
           // Use campus zoom settings
           if (campus.initialZoom) mapZoom = campus.initialZoom
           
-          // Use campus map style if available
+          // Handle campus map style with theme awareness
           if (campus.mapStyle) {
-            mapStyle = campus.mapStyle
+            if (theme === 'dark') {
+              // If dark mode is enabled and campus style is not already dark
+              if (!isDarkStyle(campus.mapStyle)) {
+                mapStyle = getDarkVariant(campus.mapStyle)
+                console.log(`🌙 Dark mode: Converting ${campus.mapStyle} → ${mapStyle}`)
+              } else {
+                // Campus style is already dark, use it as-is
+                mapStyle = campus.mapStyle
+                console.log(`🌙 Dark mode: Using campus dark style ${mapStyle}`)
+              }
+            } else {
+              // Light mode: use campus style directly
+              mapStyle = campus.mapStyle
+              console.log(`☀️ Light mode: Using campus style ${mapStyle}`)
+            }
           }
 
           // Use campus hover and highlight colors
@@ -359,6 +493,20 @@ export default function Map() {
         // Initialize map
         if (!map.current && mapContainer.current) {
           console.log('🗺️ Creating new Mapbox instance')
+          
+          // Enable RTL text plugin for Arabic and other RTL languages (only once)
+          if (!(mapboxgl as any).getRTLTextPluginStatus || (mapboxgl as any).getRTLTextPluginStatus() === 'unavailable') {
+            try {
+              mapboxgl.setRTLTextPlugin(
+                'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.3.0/mapbox-gl-rtl-text.js',
+                null,
+                true // lazy load
+              )
+            } catch (error) {
+              console.warn('RTL plugin already loaded:', error)
+            }
+          }
+          
           map.current = new mapboxgl.Map({
             container: mapContainer.current,
             style: mapStyle,
@@ -369,7 +517,7 @@ export default function Map() {
             minZoom: campus?.minZoom || 10,
             maxZoom: campus?.maxZoom || 20
           })
-          console.log('✅ Mapbox instance created')
+          console.log('✅ Mapbox instance created with RTL support')
 
           // Store initial map position for reset (use the calculated values)
           setInitialMapCenter(mapCenter)
@@ -416,7 +564,8 @@ export default function Map() {
                     color: categoryColors[building.categoryId] || '#3B82F6',
                     height: height,
                     type: 'building',
-                    icon: iconEmoji
+                    icon: iconEmoji,
+                    categoryName: category?.name || ''
                   },
                   geometry: coords
                 }
@@ -448,7 +597,8 @@ export default function Map() {
                     description: openSpace.description || '',
                     color: categoryColors[openSpace.categoryId] || '#22C55E',
                     type: 'openSpace',
-                    icon: iconEmoji
+                    icon: iconEmoji,
+                    categoryName: category?.name || ''
                   },
                   geometry: coords
                 }
@@ -813,6 +963,14 @@ export default function Map() {
             if (!e.features || e.features.length === 0) return
             const feature = e.features[0]
             
+            // Check if building has a non-clickable category (Emergency or Construction)
+            const categoryName = feature.properties.categoryName?.toLowerCase() || ''
+            const nonClickableCategories = ['emergency', 'construction', 'emergency area', 'construction zone']
+            if (nonClickableCategories.some(cat => categoryName.includes(cat))) {
+              console.log(`🚫 Building "${feature.properties.name}" is not clickable (Category: ${feature.properties.categoryName})`)
+              return
+            }
+            
             // Clear previous selection
             if (selectedBuildingId !== null) {
               map.current!.setFeatureState(
@@ -921,6 +1079,14 @@ export default function Map() {
             if (!e.features || e.features.length === 0) return
             const feature = e.features[0]
             
+            // Check if open space has a non-clickable category (Emergency or Construction)
+            const categoryName = feature.properties.categoryName?.toLowerCase() || ''
+            const nonClickableCategories = ['emergency', 'construction', 'emergency area', 'construction zone']
+            if (nonClickableCategories.some(cat => categoryName.includes(cat))) {
+              console.log(`🚫 Open space "${feature.properties.name}" is not clickable (Category: ${feature.properties.categoryName})`)
+              return
+            }
+            
             // Clear previous selection
             if (selectedOpenSpaceId !== null) {
               map.current!.setFeatureState(
@@ -1015,6 +1181,14 @@ export default function Map() {
                 }
 
                 if (inside) {
+                  // Check if building has a non-clickable category
+                  const categoryName = building.category?.name?.toLowerCase() || ''
+                  const nonClickableCategories = ['emergency', 'construction', 'emergency area', 'construction zone']
+                  if (nonClickableCategories.some(cat => categoryName.includes(cat))) {
+                    console.log(`🚫 Building "${building.name}" is not clickable (Category: ${building.category?.name})`)
+                    return
+                  }
+                  
                   // Trigger building click
                   // Clear previous selection
                   if (selectedBuildingId !== null) {
@@ -1099,6 +1273,14 @@ export default function Map() {
                 }
 
                 if (inside) {
+                  // Check if open space has a non-clickable category
+                  const categoryName = openSpace.category?.name?.toLowerCase() || ''
+                  const nonClickableCategories = ['emergency', 'construction', 'emergency area', 'construction zone']
+                  if (nonClickableCategories.some(cat => categoryName.includes(cat))) {
+                    console.log(`🚫 Open space "${openSpace.name}" is not clickable (Category: ${openSpace.category?.name})`)
+                    return
+                  }
+                  
                   // Trigger open space click
                   // Clear previous selection
                   if (selectedOpenSpaceId !== null) {
@@ -1197,22 +1379,68 @@ export default function Map() {
     }
   }, [selectedCampusId, shouldReloadMap])
 
-  // Handle theme changes separately without reloading entire map
+  // Handle theme changes by triggering a map reload
   useEffect(() => {
-    if (map.current && theme) {
-      // Update map style for theme changes without full reload
-      const mapStyle = theme === 'dark' 
-        ? 'mapbox://styles/mapbox/dark-v11'
-        : 'mapbox://styles/mapbox/light-v11'
-      
-      // Only update style if it's different
+    if (map.current && theme && buildings.length > 0 && !isLoading) {
+      // Helper function to get dark variant of a map style
+      const getDarkVariant = (style: string): string => {
+        const navigationStyles = [
+          'mapbox://styles/mapbox/streets-v12',
+          'mapbox://styles/mapbox/outdoors-v12',
+          'mapbox://styles/mapbox/navigation-day-v1'
+        ]
+        
+        if (navigationStyles.includes(style)) {
+          return 'mapbox://styles/mapbox/navigation-night-v1'
+        }
+        
+        return 'mapbox://styles/mapbox/dark-v11'
+      }
+
+      const isDarkStyle = (style: string): boolean => {
+        const darkStyles = [
+          'mapbox://styles/mapbox/navigation-night-v1',
+          'mapbox://styles/mapbox/dark-v11',
+          'mapbox://styles/mapbox/satellite-streets-v12'
+        ]
+        return darkStyles.some(darkStyle => style.includes(darkStyle.split('/').pop() || ''))
+      }
+
+      // Get current style from map
       const currentStyle = map.current.getStyle()
-      if (currentStyle.name !== mapStyle.split('/').pop()) {
-        map.current.setStyle(mapStyle)
-        console.log('🎨 Updated map style for theme change:', theme)
+      
+      // Determine what the new style should be based on theme and campus settings
+      let newMapStyle: string
+      
+      if (theme === 'dark') {
+        // Dark mode: check if we need to convert the campus style
+        const campusStyle = buildings[0]?.campusId ? campus?.mapStyle : null
+        
+        if (campusStyle && !isDarkStyle(campusStyle)) {
+          newMapStyle = getDarkVariant(campusStyle)
+        } else if (campusStyle) {
+          newMapStyle = campusStyle
+        } else {
+          newMapStyle = 'mapbox://styles/mapbox/dark-v11'
+        }
+      } else {
+        // Light mode: use campus style directly or default light
+        const campusStyle = buildings[0]?.campusId ? campus?.mapStyle : null
+        newMapStyle = campusStyle || 'mapbox://styles/mapbox/light-v11'
+      }
+      
+      // Check if style needs to change
+      const currentStyleName = currentStyle?.name || ''
+      const newStyleName = newMapStyle.split('/').pop()?.replace(/-v\d+$/, '') || ''
+      
+      if (!currentStyleName.includes(newStyleName)) {
+        console.log('🎨 Theme changed, reloading map with new style:', theme, '→', newMapStyle)
+        
+        // Trigger a full map reload with the new theme
+        setShouldReloadMap(prev => prev + 1)
       }
     }
-  }, [theme])
+  }, [theme, buildings, campus])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -1227,7 +1455,32 @@ export default function Map() {
 
   const handleLogout = async () => {
     await logout()
-    navigate('/login')
+    navigate('/dashboard')
+  }
+
+  // Sidebar handlers
+  const handleReservationClick = () => {
+    setShowReservationForm(true)
+  }
+
+  const handleAgendaClick = () => {
+    // TODO: Implement agenda functionality
+    console.log('Agenda clicked')
+  }
+
+  // Handle reservation form submission
+  const handleReservationSubmit = async (data: CreateReservationInput) => {
+    try {
+      // TODO: Implement API call to submit reservation
+      console.log('Reservation data:', data)
+      
+      // For now, just close the form and show success message
+      setShowReservationForm(false)
+      
+    } catch (error) {
+      console.error('Failed to submit reservation:', error)
+      alert('Failed to submit reservation. Please try again.')
+    }
   }
 
   const handleAccountSettings = () => {
@@ -1245,6 +1498,72 @@ export default function Map() {
     const firstName = user?.firstName || ''
     const lastName = user?.lastName || ''
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase()
+  }
+
+  const handleSavedPlaceClick = async (placeId: string, placeType: 'building' | 'openSpace') => {
+    if (!map.current) return
+
+    // Save current map position
+    const currentCenter = map.current.getCenter()
+    const currentZoom = map.current.getZoom()
+    const currentPitch = map.current.getPitch()
+    const currentBearing = map.current.getBearing()
+    setPreviousMapPosition({
+      center: [currentCenter.lng, currentCenter.lat],
+      zoom: currentZoom,
+      pitch: currentPitch,
+      bearing: currentBearing
+    })
+
+    if (placeType === 'building') {
+      setIsLoadingDetails(true)
+      setSelectedFeatureType('building')
+      try {
+        const buildingDetails = await getBuildingById(placeId)
+        setSelectedFeature(buildingDetails)
+        
+        // Fly to building
+        const geometry = typeof buildingDetails.coordinates === 'string'
+          ? JSON.parse(buildingDetails.coordinates)
+          : buildingDetails.coordinates
+        const coords = geometry.coordinates[0][0]
+        
+        map.current.flyTo({
+          center: coords,
+          zoom: 18,
+          pitch: 60,
+          duration: 1500
+        })
+      } catch (error) {
+        console.error('Failed to fetch building details:', error)
+      } finally {
+        setIsLoadingDetails(false)
+      }
+    } else if (placeType === 'openSpace') {
+      setIsLoadingDetails(true)
+      setSelectedFeatureType('openSpace')
+      try {
+        const openSpaceDetails: any = await getOpenSpaceById(placeId)
+        setSelectedFeature(openSpaceDetails)
+        
+        // Fly to open space
+        const geometry = typeof openSpaceDetails.coordinates === 'string'
+          ? JSON.parse(openSpaceDetails.coordinates)
+          : openSpaceDetails.coordinates
+        const coords = geometry.coordinates[0][0]
+        
+        map.current.flyTo({
+          center: coords,
+          zoom: 17,
+          pitch: 45,
+          duration: 1500
+        })
+      } catch (error) {
+        console.error('Failed to fetch open space details:', error)
+      } finally {
+        setIsLoadingDetails(false)
+      }
+    }
   }
 
   const handleSearchSelect = async (result: { id: string; name: string; type: 'building' | 'openSpace' | 'location' }) => {
@@ -1403,6 +1722,30 @@ export default function Map() {
                       <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
                       <p className="text-xs text-muted-foreground">{user?.email}</p>
                     </div>
+                    {/* My Reservations - Only for permanent users */}
+                    {user?.userType === 'PERMANENT' && (
+                      <button
+                        onClick={() => {
+                          setShowMyReservations(true)
+                          setShowProfileMenu(false)
+                        }}
+                        className="w-full px-4 py-2 text-left hover:bg-muted flex items-center gap-2 text-sm"
+                      >
+                        <Calendar className="w-4 h-4" />
+                        My Reservations
+                      </button>
+                    )}
+                    {/* Saved Places */}
+                    <button
+                      onClick={() => {
+                        setShowSavedPlaces(true)
+                        setShowProfileMenu(false)
+                      }}
+                      className="w-full px-4 py-2 text-left hover:bg-muted flex items-center gap-2 text-sm"
+                    >
+                      <Bookmark className="w-4 h-4" />
+                      Saved Places
+                    </button>
                     {/* Account Settings - Only for permanent users */}
                     {user?.userType === 'PERMANENT' && (
                       <button
@@ -1467,6 +1810,30 @@ export default function Map() {
                   <p className="text-sm font-medium">{user?.firstName} {user?.lastName}</p>
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
+                {/* My Reservations - Only for permanent users */}
+                {user?.userType === 'PERMANENT' && (
+                  <button
+                    onClick={() => {
+                      setShowMyReservations(true)
+                      setShowMobileMenu(false)
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-sm"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    My Reservations
+                  </button>
+                )}
+                {/* Saved Places */}
+                <button
+                  onClick={() => {
+                    setShowSavedPlaces(true)
+                    setShowMobileMenu(false)
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted text-sm"
+                >
+                  <Bookmark className="w-4 h-4" />
+                  Saved Places
+                </button>
                 {/* Account Settings - Only for permanent users */}
                 {user?.userType === 'PERMANENT' && (
                   <button
@@ -1496,8 +1863,8 @@ export default function Map() {
         </div>
       </header>
 
-      {/* Map Container - Mobile Responsive */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* Map Container - Full width without sidebar */}
+      <div className="flex-1 relative overflow-hidden transition-all duration-300">
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
             <div className="text-center">
@@ -1524,7 +1891,7 @@ export default function Map() {
         <div ref={mapContainer} className="w-full h-full" />
 
         {/* Search Bar */}
-        {!isLoading && !showDirections && (
+        {!isLoading && !showDirections && !showTurnByTurn && (
           <MapSearch
             buildings={buildings}
             openSpaces={openSpaces}
@@ -1542,7 +1909,8 @@ export default function Map() {
               }
               setShowDirections(true)
             }}
-            isPanelExpanded={!!selectedFeature || isPanelExpanded}
+            isPanelExpanded={isPanelExpanded}
+            userLocation={userLocation || undefined}
           />
         )}
 
@@ -1692,6 +2060,13 @@ export default function Map() {
 
               console.log('✅ Route calculated:', route.distance, 'meters,', route.estimatedTime, 'minutes')
 
+              // Save route data for turn-by-turn navigation
+              setCurrentRoute(route)
+              setRouteSource(source?.name || 'Unknown')
+              setRouteDestination(destination?.name || 'Unknown')
+              setShowTurnByTurn(true)
+              setShowDirections(false)
+
               // Draw route on map
               const geojson = {
                 type: 'Feature' as const,
@@ -1744,19 +2119,124 @@ export default function Map() {
           />
         )}
 
+        {/* Turn-by-Turn Navigation Panel */}
+        {showTurnByTurn && currentRoute && (
+          <TurnByTurnPanel
+            route={{
+              ...currentRoute,
+              coordinates: currentRoute.coordinates
+            }}
+            sourceName={routeSource}
+            destinationName={routeDestination}
+            onCameraMove={(coordinates, zoom, bearing, pitch) => {
+              if (map.current) {
+                map.current.flyTo({
+                  center: coordinates,
+                  zoom: zoom || 19,
+                  bearing: bearing || 0,
+                  pitch: pitch || 60,
+                  duration: 1200,
+                  essential: true
+                })
+                console.log('📹 Camera moved to:', coordinates, 'bearing:', bearing, 'pitch:', pitch)
+              }
+            }}
+            onAddNodeMarker={(coordinates, stepIndex) => {
+              if (map.current) {
+                // Create a marker element
+                const el = document.createElement('div')
+                el.className = 'turn-node-marker'
+                el.style.width = '32px'
+                el.style.height = '32px'
+                el.style.borderRadius = '50%'
+                el.style.backgroundColor = 'hsl(var(--primary))'
+                el.style.border = '3px solid white'
+                el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'
+                el.style.display = 'flex'
+                el.style.alignItems = 'center'
+                el.style.justifyContent = 'center'
+                el.style.color = 'white'
+                el.style.fontWeight = 'bold'
+                el.style.fontSize = '12px'
+                el.textContent = `${stepIndex + 1}`
+                
+                // Add marker to map
+                new mapboxgl.Marker(el)
+                  .setLngLat(coordinates)
+                  .addTo(map.current)
+                
+                console.log('📍 Node marker added at:', coordinates, 'step:', stepIndex + 1)
+              }
+            }}
+            onClose={() => {
+              setShowTurnByTurn(false)
+              // Stop voice guidance
+              window.speechSynthesis.cancel()
+              
+              // Clear route from map
+              if (map.current) {
+                const routeSource = map.current.getSource('route') as mapboxgl.GeoJSONSource
+                if (routeSource) {
+                  routeSource.setData({
+                    type: 'FeatureCollection',
+                    features: []
+                  })
+                  console.log('✅ Route cleared')
+                }
+                
+                // Restore previous map position if it exists
+                if (previousMapPosition) {
+                  map.current.flyTo({
+                    center: previousMapPosition.center,
+                    zoom: previousMapPosition.zoom,
+                    pitch: previousMapPosition.pitch,
+                    bearing: previousMapPosition.bearing,
+                    duration: 1500
+                  })
+                  console.log('✅ Restored previous map position')
+                  setPreviousMapPosition(null)
+                } else {
+                  // If no previous position, reset to normal view
+                  map.current.flyTo({
+                    bearing: 0,
+                    pitch: 0,
+                    duration: 1500
+                  })
+                  console.log('✅ Reset to normal view (bearing: 0, pitch: 0)')
+                }
+              }
+              pathfinding.clearRoute()
+            }}
+          />
+        )}
+
         {/* Custom Map Controls */}
-        <MapControls
-          map={map.current}
-          initialCenter={initialMapCenter}
-          initialZoom={initialMapZoom}
-          initialPitch={initialMapPitch}
-          initialBearing={initialMapBearing}
-          isPanelExpanded={isPanelExpanded}
-          emergencyContacts={emergencyContacts}
-          onLocationUpdate={(location) => setUserLocation(location)}
-          isGpsActive={isGpsActive}
-          onGpsActiveChange={(active) => setIsGpsActive(active)}
-        />
+        <div className={showTurnByTurn ? 'hidden' : ''}>
+          <MapControls
+            map={map.current}
+            initialCenter={initialMapCenter}
+            initialZoom={initialMapZoom}
+            initialPitch={initialMapPitch}
+            initialBearing={initialMapBearing}
+            isPanelExpanded={isPanelExpanded}
+            emergencyContacts={emergencyContacts}
+            onLocationUpdate={(location) => setUserLocation(location)}
+            isGpsActive={isGpsActive}
+            onGpsActiveChange={(active) => setIsGpsActive(active)}
+            onEmergencyClick={() => setShowEmergencyPanel(true)}
+            user={user || undefined}
+            onAgendaClick={handleAgendaClick}
+            onReservationClick={handleReservationClick}
+          />
+        </div>
+
+        {/* Emergency Contacts Panel */}
+        {showEmergencyPanel && (
+          <EmergencyContactsPanel
+            contacts={emergencyContacts}
+            onClose={() => setShowEmergencyPanel(false)}
+          />
+        )}
 
         {/* Info Panel - Google Maps Style */}
         {selectedFeature && selectedFeatureType && (
@@ -1780,32 +2260,80 @@ export default function Map() {
               setSelectedFeatureType(null)
               setPreviousMapPosition(null)
               setIsPanelExpanded(false)
+              
+              // Clean up URL parameters if this was a shared link
+              if (sharedPlaceId && sharedPlaceType) {
+                window.history.replaceState({}, '', '/map')
+              }
             }}
             onExpandChange={setIsPanelExpanded}
             onDirections={() => {
+              // Extract coordinates from the selected feature
+              let coordinates: [number, number] = [0, 0]
+              
+              if (selectedFeature.center && Array.isArray(selectedFeature.center)) {
+                coordinates = selectedFeature.center as [number, number]
+              } else if (selectedFeature.coordinates) {
+                // If coordinates is a string (GeoJSON), parse it
+                if (typeof selectedFeature.coordinates === 'string') {
+                  try {
+                    const parsed = JSON.parse(selectedFeature.coordinates)
+                    if (parsed.type === 'Polygon' && parsed.coordinates?.[0]?.length > 0) {
+                      // Calculate centroid of polygon
+                      const coords = parsed.coordinates[0]
+                      const sumLng = coords.reduce((sum: number, c: number[]) => sum + c[0], 0)
+                      const sumLat = coords.reduce((sum: number, c: number[]) => sum + c[1], 0)
+                      coordinates = [sumLng / coords.length, sumLat / coords.length]
+                    }
+                  } catch (e) {
+                    console.warn('Failed to parse coordinates:', e)
+                  }
+                } else if (Array.isArray(selectedFeature.coordinates) && selectedFeature.coordinates.length === 2) {
+                  coordinates = selectedFeature.coordinates as [number, number]
+                }
+              }
+              
+              console.log('🎯 Opening directions with destination:', selectedFeature.name, coordinates)
+              
+              // Set destination and open directions panel
               setDirectionsDestination({
                 name: selectedFeature.name,
-                coordinates: [0, 0] // Will be populated from actual data
+                coordinates: coordinates
               })
               setShowDirections(true)
+              
+              // Close feature info panel
               setSelectedFeature(null)
               setSelectedFeatureType(null)
+              setIsPanelExpanded(false)
             }}
+          />
+        )}
+
+
+        {/* Reservation Form Modal */}
+        {showReservationForm && (
+          <ReservationForm
+            user={user || undefined}
+            onClose={() => setShowReservationForm(false)}
+            onSubmit={handleReservationSubmit}
+          />
+        )}
+
+        {/* My Reservations Panel */}
+        {showMyReservations && (
+          <MyReservationsPanel onClose={() => setShowMyReservations(false)} />
+        )}
+
+        {/* Saved Places Panel */}
+        {showSavedPlaces && (
+          <SavedPlacesPanel 
+            onClose={() => setShowSavedPlaces(false)}
+            onPlaceClick={handleSavedPlaceClick}
           />
         )}
       </div>
 
-      {/* Footer Info - Mobile Responsive */}
-      <div className="bg-card border-t border-border px-4 sm:px-6 py-2 sm:py-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs sm:text-sm text-muted-foreground">
-          <div className="text-center sm:text-left">
-            <span className="font-medium">User Type:</span> {user?.userType}
-          </div>
-          <div className="text-center sm:text-right">
-            © 2025 UM6P. All rights reserved.
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

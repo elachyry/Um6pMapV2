@@ -16,6 +16,7 @@ export const findById = async (id: string) => {
     where: { id },
     include: {
       campus: true,
+      category: true,
     },
   })
 
@@ -106,6 +107,7 @@ export const findAll = async (page: number = 1, limit: number = 10, filters: any
       take: limit,
       include: {
         campus: true,
+        category: true,
       },
       orderBy: { createdAt: 'desc' },
     }),

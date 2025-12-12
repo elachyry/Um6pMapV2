@@ -369,11 +369,15 @@ export default function MapManagement() {
     
     const fetchCategories = async () => {
       try {
-        // Fetch all categories without pagination for forms (limit=100 to get all)
-        const response: any = await getAllCategories(1, 100)
+        // Fetch ALL categories without pagination for forms (limit=9999 to get all)
+        const response: any = await getAllCategories(1, 9999)
+        console.log('📦 Fetched categories for forms:', response.data)
+        console.log('📊 Total categories:', response.data?.length || 0)
+        console.log('🏢 Building categories:', response.data?.filter((c: any) => c.type === 'building').length || 0)
+        console.log('🌳 Open space categories:', response.data?.filter((c: any) => c.type === 'open_space').length || 0)
         setCategories(response.data || [])
       } catch (error: any) {
-        console.error('Failed to fetch categories:', error)
+        console.error('❌ Failed to fetch categories:', error)
       }
     }
 
@@ -4774,7 +4778,11 @@ export default function MapManagement() {
                   <div className="mb-2">
                     <h3 className="font-semibold text-base md:text-lg line-clamp-1 mb-1">{openSpace.name}</h3>
                     <div className="flex items-center gap-1.5 md:gap-2 flex-wrap mt-1">
-                      <Badge variant="secondary" className="text-xs px-1.5 py-0.5 capitalize">{openSpace.openSpaceType}</Badge>
+                      {openSpace.category?.name && (
+                        <Badge variant="secondary" className="text-xs px-1.5 py-0.5">
+                          {openSpace.category.name}
+                        </Badge>
+                      )}
                       {openSpace.capacity && (
                         <Badge variant="outline" className="text-xs px-1.5 py-0.5 whitespace-nowrap">Cap: {openSpace.capacity}</Badge>
                       )}
@@ -4962,19 +4970,25 @@ export default function MapManagement() {
       />
 
       {/* Building Form */}
-      {showBuildingForm && (
-        <BuildingForm
-          building={editingBuilding}
-          campuses={campuses}
-          categories={categories.filter((cat: any) => cat.type === 'building')}
-          onSubmit={handleBuildingFormSubmit}
-          onCancel={() => {
-            setShowBuildingForm(false)
-            setEditingBuilding(null)
-          }}
-          isLoading={isSubmitting}
-        />
-      )}
+      {showBuildingForm && (() => {
+        const buildingCategories = categories.filter((cat: any) => cat.type === 'building')
+        console.log('🏗️ Building Form - All categories:', categories.length)
+        console.log('🏗️ Building Form - Filtered building categories:', buildingCategories.length)
+        console.log('🏗️ Building Form - Categories:', buildingCategories)
+        return (
+          <BuildingForm
+            building={editingBuilding}
+            campuses={campuses}
+            categories={buildingCategories}
+            onSubmit={handleBuildingFormSubmit}
+            onCancel={() => {
+              setShowBuildingForm(false)
+              setEditingBuilding(null)
+            }}
+            isLoading={isSubmitting}
+          />
+        )
+      })()}
 
       {/* Open Space Form */}
       {showOpenSpaceForm && (

@@ -106,25 +106,32 @@ export default function TemporaryUsers() {
 
     setIsSubmitting(true)
     try {
-      // Add campusId to data
       const userData = {
         ...data,
         campusId: selectedCampusId
       }
 
+      let result
       if (editingUser) {
-        await updateUser(editingUser.id, userData)
+        result = await updateUser(editingUser.id, userData)
         toast.success('User updated successfully')
       } else {
-        await createUser(userData)
+        result = await createUser(userData)
         toast.success('User created successfully')
       }
-      setShowUserForm(false)
-      setEditingUser(null)
-      await fetchUsers()
+      
+      // Check if result is valid
+      if (result && result.success !== false) {
+        setShowUserForm(false)
+        setEditingUser(null)
+        await fetchUsers()
+      } else {
+        throw new Error(result?.error || 'Failed to save user')
+      }
     } catch (error: any) {
       console.error('Failed to save user:', error)
-      toast.error(error.message || 'Failed to save user')
+      const errorMessage = error?.response?.data?.error || error?.message || 'Failed to save user'
+      toast.error(errorMessage)
     } finally {
       setIsSubmitting(false)
     }

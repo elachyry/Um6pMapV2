@@ -62,6 +62,11 @@ export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection, campu
     }
   }
 
+  // Fetch all building categories for matching
+  const categories = await prisma.category.findMany({
+    where: { type: 'building' }
+  })
+
   result.total = geojson.features.length
 
   for (const feature of geojson.features) {
@@ -89,6 +94,20 @@ export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection, campu
         continue
       }
 
+      // Try to match category based on building name
+      let categoryId: string | null = null
+      const nameLower = buildingName.toLowerCase()
+      
+      for (const category of categories) {
+        const categoryNameLower = category.name.toLowerCase()
+        // Check if building name contains category name
+        if (nameLower.includes(categoryNameLower)) {
+          categoryId = category.id
+          console.log(`✅ Matched building "${buildingName}" to category "${category.name}"`)
+          break
+        }
+      }
+
       // Create building
       await buildingRepository.create({
         name: buildingName,
@@ -96,7 +115,8 @@ export async function importFromGeoJSON(geojson: GeoJSONFeatureCollection, campu
         description: `Imported from GeoJSON (FID: ${feature.properties.fid || 'N/A'})`,
         coordinates: geometryString,
         isActive: true,
-        ...(campusId && { campusId })
+        ...(campusId && { campusId }),
+        ...(categoryId && { categoryId })
       })
 
       result.imported++

@@ -205,6 +205,11 @@ export const importFromGeoJSON = async (campusId: string, geojson: any) => {
     }
   }
 
+  // Fetch all open space categories for matching
+  const categories = await prisma.category.findMany({
+    where: { type: 'open_space' }
+  })
+
   result.total = geojson.features.length
 
   for (const feature of geojson.features) {
@@ -242,6 +247,20 @@ export const importFromGeoJSON = async (campusId: string, geojson: any) => {
         counter++
       }
 
+      // Try to match category based on open space name
+      let categoryId: string | null = null
+      const nameLower = name.toLowerCase()
+      
+      for (const category of categories) {
+        const categoryNameLower = category.name.toLowerCase()
+        // Check if open space name contains category name
+        if (nameLower.includes(categoryNameLower)) {
+          categoryId = category.id
+          console.log(`✅ Matched open space "${name}" to category "${category.name}"`)
+          break
+        }
+      }
+
       // Create open space
       await openSpaceRepository.create({
         name,
@@ -251,6 +270,7 @@ export const importFromGeoJSON = async (campusId: string, geojson: any) => {
         openSpaceType: feature.properties?.type || 'general',
         isActive: true,
         isReservable: false,
+        ...(categoryId && { categoryId })
       })
 
       result.imported++

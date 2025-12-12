@@ -14,10 +14,8 @@ export default function ChangePassword() {
   const navigate = useNavigate()
   const { loadUser } = useAuthStore()
   
-  const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [showOldPassword, setShowOldPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
@@ -38,15 +36,10 @@ export default function ChangePassword() {
       return
     }
 
-    if (oldPassword === newPassword) {
-      setError('New password must be different from old password')
-      return
-    }
-
     setIsLoading(true)
     try {
       console.log('🔄 Changing password...')
-      await authApi.changePassword(oldPassword, newPassword)
+      await authApi.changePassword('', newPassword)
       console.log('✅ Password changed successfully')
       
       // Reload user to update mustChangePassword flag
@@ -113,34 +106,6 @@ export default function ChangePassword() {
                 <p className="text-sm">{error}</p>
               </div>
             )}
-
-            {/* Old Password */}
-            <div className="space-y-2">
-              <label htmlFor="oldPassword" className="text-sm font-medium text-foreground">
-                Current Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <input
-                  id="oldPassword"
-                  type={showOldPassword ? 'text' : 'password'}
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
-                  placeholder="Enter current password"
-                  required
-                  className="w-full pl-10 pr-12 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowOldPassword(!showOldPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  disabled={isLoading}
-                >
-                  {showOldPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
 
             {/* New Password */}
             <div className="space-y-2">

@@ -34,8 +34,7 @@ export class ReservationRepository {
             lastName: true,
           },
         },
-        building: true,
-        location: true,
+        campus: true,
       },
     })
   }
@@ -47,7 +46,7 @@ export class ReservationRepository {
     return prisma.reservation.create({
       data,
       include: {
-        requester: {
+        user: {
           select: {
             id: true,
             email: true,
@@ -55,8 +54,7 @@ export class ReservationRepository {
             lastName: true,
           },
         },
-        building: true,
-        location: true,
+        campus: true,
       },
     })
   }
@@ -135,7 +133,7 @@ export class ReservationRepository {
         where,
         orderBy,
         include: {
-          requester: {
+          user: {
             select: {
               id: true,
               firstName: true,
@@ -143,13 +141,7 @@ export class ReservationRepository {
               email: true,
             },
           },
-          building: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          location: {
+          campus: {
             select: {
               id: true,
               name: true,

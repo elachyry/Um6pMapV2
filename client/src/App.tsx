@@ -11,6 +11,8 @@ import Signup from './pages/Signup'
 import MagicLogin from './pages/MagicLogin'
 import VerifyEmail from './pages/VerifyEmail'
 import VerifyEmailPending from './pages/VerifyEmailPending'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import ChangePassword from './pages/ChangePassword'
 import Dashboard from './pages/Dashboard'
 import Map from './pages/Map'
@@ -22,7 +24,8 @@ import QRCodes from './pages/QRCodes'
 import RoleManagement from './pages/RoleManagement'
 import RouteGeneration from './pages/RouteGeneration'
 import MapManagement from './pages/MapManagement'
-import Reservations from './pages/Reservations'
+import { ReservationsManagement } from './pages/admin/ReservationsManagement'
+import MyReservations from './pages/MyReservations'
 import DatabaseBackup from './pages/DatabaseBackup'
 import CampusManagement from './pages/CampusManagement'
 
@@ -53,6 +56,8 @@ function App() {
           <Route path="/magic-login" element={<MagicLogin />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/verify-email-pending" element={<VerifyEmailPending />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           
           {/* Change Password - Protected but accessible to all authenticated users */}
           <Route 
@@ -87,6 +92,7 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="my-reservations" element={<MyReservations />} />
             <Route path="temporary-users" element={<TemporaryUsers />} />
             <Route path="permanent-users" element={<PermanentUsers />} />
             <Route path="access-requests" element={<AccessRequests />} />
@@ -95,7 +101,7 @@ function App() {
             <Route path="roles" element={<RoleManagement />} />
             <Route path="route-generation" element={<RouteGeneration />} />
             <Route path="map-management" element={<MapManagement />} />
-            <Route path="reservations" element={<Reservations />} />
+            <Route path="reservations" element={<ReservationsManagement />} />
             <Route path="database-backup" element={<DatabaseBackup />} />
             <Route path="campus" element={<CampusManagement />} />
           </Route>

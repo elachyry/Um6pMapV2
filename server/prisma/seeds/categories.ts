@@ -13,7 +13,7 @@ export const buildingCategories = [
     name: 'Academic',
     slug: 'academic',
     description: 'Academic buildings including classrooms, lecture halls, and study areas',
-    icon: 'GraduationCap',
+    icon: '🎓',
     color: '#3B82F6', // Blue
     type: 'building'
   },
@@ -21,7 +21,7 @@ export const buildingCategories = [
     name: 'Administrative',
     slug: 'administrative',
     description: 'Administrative offices and management buildings',
-    icon: 'Building2',
+    icon: '🏢',
     color: '#8B5CF6', // Purple
     type: 'building'
   },
@@ -29,7 +29,7 @@ export const buildingCategories = [
     name: 'Research',
     slug: 'research',
     description: 'Research facilities, laboratories, and innovation centers',
-    icon: 'FlaskConical',
+    icon: '🧪',
     color: '#10B981', // Green
     type: 'building'
   },
@@ -37,7 +37,7 @@ export const buildingCategories = [
     name: 'Library',
     slug: 'library',
     description: 'Libraries, resource centers, and study spaces',
-    icon: 'BookOpen',
+    icon: '📖',
     color: '#F59E0B', // Amber
     type: 'building'
   },
@@ -45,7 +45,7 @@ export const buildingCategories = [
     name: 'Dining',
     slug: 'dining',
     description: 'Cafeterias, restaurants, and food courts',
-    icon: 'Utensils',
+    icon: '🍴',
     color: '#EF4444', // Red
     type: 'building'
   },
@@ -53,15 +53,23 @@ export const buildingCategories = [
     name: 'Recreation',
     slug: 'recreation',
     description: 'Sports facilities, gyms, and recreational areas',
-    icon: 'Dumbbell',
+    icon: '🏋️',
     color: '#06B6D4', // Cyan
+    type: 'building'
+  },
+  {
+    name: 'Sports',
+    slug: 'sports',
+    description: 'Sports centers, gymnasiums, and athletic facilities',
+    icon: '🏆',
+    color: '#F97316', // Orange
     type: 'building'
   },
   {
     name: 'Residence',
     slug: 'residence',
     description: 'Student dormitories and residential buildings',
-    icon: 'Home',
+    icon: '🏠',
     color: '#EC4899', // Pink
     type: 'building'
   },
@@ -69,15 +77,23 @@ export const buildingCategories = [
     name: 'Health',
     slug: 'health',
     description: 'Health centers, clinics, and medical facilities',
-    icon: 'Heart',
+    icon: '❤️',
     color: '#14B8A6', // Teal
+    type: 'building'
+  },
+  {
+    name: 'Parking',
+    slug: 'parking',
+    description: 'Parking garages and covered parking facilities',
+    icon: '🅿️',
+    color: '#6B7280', // Gray
     type: 'building'
   },
   {
     name: 'Auditorium',
     slug: 'auditorium',
     description: 'Auditoriums, theaters, and event spaces',
-    icon: 'Theater',
+    icon: '🎭',
     color: '#7C3AED', // Violet
     type: 'building'
   },
@@ -85,7 +101,7 @@ export const buildingCategories = [
     name: 'Technology',
     slug: 'technology',
     description: 'IT centers, computer labs, and technology facilities',
-    icon: 'Laptop',
+    icon: '💻',
     color: '#0EA5E9', // Sky Blue
     type: 'building'
   },
@@ -93,7 +109,7 @@ export const buildingCategories = [
     name: 'Art & Culture',
     slug: 'art-culture',
     description: 'Art galleries, museums, and cultural centers',
-    icon: 'Palette',
+    icon: '🎨',
     color: '#A855F7', // Fuchsia
     type: 'building'
   }
@@ -105,7 +121,7 @@ export const openSpaceCategories = [
     name: 'Park',
     slug: 'park',
     description: 'Parks, gardens, and green recreational areas',
-    icon: 'TreePine',
+    icon: '🌲',
     color: '#22C55E', // Green
     type: 'open_space'
   },
@@ -113,7 +129,7 @@ export const openSpaceCategories = [
     name: 'Plaza',
     slug: 'plaza',
     description: 'Open plazas, courtyards, and gathering spaces',
-    icon: 'Landmark',
+    icon: '🏛️',
     color: '#F59E0B', // Amber
     type: 'open_space'
   },
@@ -121,23 +137,87 @@ export const openSpaceCategories = [
     name: 'Parking Lot',
     slug: 'parking-lot',
     description: 'Outdoor parking areas and lots',
-    icon: 'ParkingCircle',
+    icon: '🅿️',
     color: '#6B7280', // Gray
+    type: 'open_space'
+  },
+  {
+    name: 'Gate',
+    slug: 'gate',
+    description: 'Campus gates and entrance points',
+    icon: '🚪',
+    color: '#78716C', // Stone
+    type: 'open_space'
+  },
+  {
+    name: 'Lake',
+    slug: 'lake',
+    description: 'Lakes, ponds, and water bodies',
+    icon: '🌊',
+    color: '#06B6D4', // Cyan
+    type: 'open_space'
+  },
+  {
+    name: 'Pergola',
+    slug: 'pergola',
+    description: 'Pergolas, gazebos, and covered outdoor structures',
+    icon: '⛱️',
+    color: '#D97706', // Amber-600
     type: 'open_space'
   },
   {
     name: 'Sports Field',
     slug: 'sports-field',
     description: 'Athletic fields, courts, and outdoor sports facilities',
-    icon: 'Trophy',
+    icon: '🏆',
     color: '#3B82F6', // Blue
+    type: 'open_space'
+  },
+  {
+    name: 'Football Field',
+    slug: 'football-field',
+    description: 'Football and soccer fields',
+    icon: '⚽',
+    color: '#22C55E', // Green
+    type: 'open_space'
+  },
+  {
+    name: 'Basketball Court',
+    slug: 'basketball-court',
+    description: 'Basketball courts and hoops',
+    icon: '🏀',
+    color: '#F97316', // Orange
+    type: 'open_space'
+  },
+  {
+    name: 'Tennis Court',
+    slug: 'tennis-court',
+    description: 'Tennis courts and facilities',
+    icon: '🎾',
+    color: '#FBBF24', // Yellow
+    type: 'open_space'
+  },
+  {
+    name: 'Volleyball Court',
+    slug: 'volleyball-court',
+    description: 'Volleyball courts and nets',
+    icon: '🏐',
+    color: '#06B6D4', // Cyan
+    type: 'open_space'
+  },
+  {
+    name: 'Padel Court',
+    slug: 'padel-court',
+    description: 'Padel tennis courts',
+    icon: '🎾',
+    color: '#8B5CF6', // Purple
     type: 'open_space'
   },
   {
     name: 'Garden',
     slug: 'garden',
     description: 'Botanical gardens, flower gardens, and landscaped areas',
-    icon: 'Flower2',
+    icon: '🌸',
     color: '#EC4899', // Pink
     type: 'open_space'
   },
@@ -145,7 +225,7 @@ export const openSpaceCategories = [
     name: 'Amphitheater',
     slug: 'amphitheater',
     description: 'Outdoor amphitheaters and performance spaces',
-    icon: 'Music',
+    icon: '🎵',
     color: '#8B5CF6', // Purple
     type: 'open_space'
   },
@@ -153,7 +233,7 @@ export const openSpaceCategories = [
     name: 'Walkway',
     slug: 'walkway',
     description: 'Pedestrian paths, walkways, and promenades',
-    icon: 'MapPin',
+    icon: '🚶',
     color: '#14B8A6', // Teal
     type: 'open_space'
   },
@@ -161,7 +241,7 @@ export const openSpaceCategories = [
     name: 'Water Feature',
     slug: 'water-feature',
     description: 'Fountains, ponds, and water installations',
-    icon: 'Waves',
+    icon: '⛲',
     color: '#06B6D4', // Cyan
     type: 'open_space'
   },
@@ -169,7 +249,7 @@ export const openSpaceCategories = [
     name: 'Outdoor Seating',
     slug: 'outdoor-seating',
     description: 'Benches, picnic areas, and outdoor seating zones',
-    icon: 'Coffee',
+    icon: '☕',
     color: '#F97316', // Orange
     type: 'open_space'
   },
@@ -177,7 +257,7 @@ export const openSpaceCategories = [
     name: 'Transportation Hub',
     slug: 'transportation-hub',
     description: 'Bus stops, bike stations, and transportation areas',
-    icon: 'Bus',
+    icon: '🚌',
     color: '#EF4444', // Red
     type: 'open_space'
   },
@@ -185,7 +265,7 @@ export const openSpaceCategories = [
     name: 'Emergency Area',
     slug: 'emergency-area',
     description: 'Emergency assembly points and safety zones',
-    icon: 'AlertTriangle',
+    icon: '⚠️',
     color: '#DC2626', // Dark Red
     type: 'open_space'
   },
@@ -193,7 +273,7 @@ export const openSpaceCategories = [
     name: 'Viewpoint',
     slug: 'viewpoint',
     description: 'Scenic viewpoints and observation areas',
-    icon: 'Mountain',
+    icon: '⛰️',
     color: '#7C3AED', // Violet
     type: 'open_space'
   }
@@ -208,7 +288,7 @@ export async function seedCategories() {
   try {
     for (const category of defaultCategories) {
       await prisma.category.upsert({
-        where: { slug: category.slug },
+        where: { name: category.name },
         update: category,
         create: category
       })

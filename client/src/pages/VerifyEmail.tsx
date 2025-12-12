@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Building2, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { apiClient } from '@/api/client'
 
@@ -43,10 +43,11 @@ export default function VerifyEmail() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-            <Building2 className="w-10 h-10 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold text-foreground">UM6P Map</h1>
+          <img 
+            src="/um6p-logo.png" 
+            alt="UM6P Logo" 
+            className="w-60 h-20 object-contain"
+          />
         </div>
 
         {/* Status Card */}
