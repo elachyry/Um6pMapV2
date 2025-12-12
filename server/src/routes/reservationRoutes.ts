@@ -377,6 +377,7 @@ export default async function reservationRoutes(fastify: FastifyInstance) {
       const user = request.user as any
       const approvedByName = user.name || user.email || 'Unknown'
       
+      // @ts-ignore - forceApprove parameter exists but not in type definition
       const reservation = await reservationService.approveReservation(id, {
         committeeComments,
         approvedBy: approvedByName,
