@@ -31,6 +31,7 @@ interface UserFormProps {
   onCancel: () => void
   onResetPassword?: (userId: string, userName: string) => void
   isLoading?: boolean
+  campuses?: any[]
 }
 
 export function UserForm({ user, userType, onSubmit, onCancel, onResetPassword, isLoading = false }: UserFormProps) {

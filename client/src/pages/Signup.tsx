@@ -34,7 +34,7 @@ export default function Signup() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
+  // const [success, setSuccess] = useState(false)
 
   // Fetch campuses
   useEffect(() => {

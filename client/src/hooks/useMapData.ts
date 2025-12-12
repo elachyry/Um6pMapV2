@@ -35,8 +35,8 @@ export function useBuildings(campusId?: string) {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.buildings(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/buildings', { params })
+      const endpoint = campusId ? `/buildings?campusId=${campusId}` : '/buildings'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 10 * 60 * 1000, // 10 minutes - buildings don't change often
@@ -70,8 +70,8 @@ export function useOpenSpaces(campusId?: string) {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.openSpaces(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/open-spaces', { params })
+      const endpoint = campusId ? `/open-spaces?campusId=${campusId}` : '/open-spaces'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 10 * 60 * 1000,
@@ -84,11 +84,11 @@ export function useOpenSpaces(campusId?: string) {
  * Purpose: Fetch and cache all POIs (Points of Interest) for a campus
  */
 export function usePOIs(campusId?: string) {
-  return useQuery({
+  return useQuery<{ data: any }>({
     queryKey: MAP_QUERY_KEYS.pois(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/pois', { params })
+      const endpoint = campusId ? `/locations?campusId=${campusId}` : '/locations'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 5 * 60 * 1000, // 5 minutes - POIs might change more frequently
@@ -104,8 +104,8 @@ export function usePaths(campusId?: string) {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.paths(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/paths', { params })
+      const endpoint = campusId ? `/paths?campusId=${campusId}` : '/paths'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 10 * 60 * 1000,
@@ -121,8 +121,8 @@ export function useBoundaries(campusId?: string) {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.boundaries(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/boundaries', { params })
+      const endpoint = campusId ? `/boundaries?campusId=${campusId}` : '/boundaries'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 15 * 60 * 1000, // 15 minutes - boundaries rarely change
@@ -138,7 +138,7 @@ export function useCategories() {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.categories(),
     queryFn: async () => {
-      const response = await apiClient.get('/categories')
+      const response = await apiClient.get<{ data: any }>('/categories')
       return response.data
     },
     staleTime: 30 * 60 * 1000, // 30 minutes - categories rarely change
@@ -153,8 +153,8 @@ export function useEmergencyContacts(campusId?: string) {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.emergencyContacts(campusId),
     queryFn: async () => {
-      const params = campusId ? { campusId } : {}
-      const response = await apiClient.get('/emergency-contacts', { params })
+      const endpoint = campusId ? `/emergency-contacts?campusId=${campusId}` : '/emergency-contacts'
+      const response = await apiClient.get<{ data: any }>(endpoint)
       return response.data
     },
     staleTime: 20 * 60 * 1000, // 20 minutes
@@ -170,7 +170,7 @@ export function useCampuses() {
   return useQuery({
     queryKey: MAP_QUERY_KEYS.campuses(),
     queryFn: async () => {
-      const response = await apiClient.get('/campuses')
+      const response = await apiClient.get<{ data: any }>('/campuses')
       return response.data
     },
     staleTime: 30 * 60 * 1000, // 30 minutes - campuses rarely change
@@ -195,42 +195,42 @@ export function usePrefetchMapData() {
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.buildings(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/buildings', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/buildings?campusId=${campusId}`)
             return response.data
           },
         }),
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.openSpaces(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/open-spaces', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/open-spaces?campusId=${campusId}`)
             return response.data
           },
         }),
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.pois(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/pois', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/pois?campusId=${campusId}`)
             return response.data
           },
         }),
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.paths(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/paths', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/paths?campusId=${campusId}`)
             return response.data
           },
         }),
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.boundaries(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/boundaries', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/boundaries?campusId=${campusId}`)
             return response.data
           },
         }),
         queryClient.prefetchQuery({
           queryKey: MAP_QUERY_KEYS.emergencyContacts(campusId),
           queryFn: async () => {
-            const response = await apiClient.get('/emergency-contacts', { params: { campusId } })
+            const response = await apiClient.get<{ data: any }>(`/emergency-contacts?campusId=${campusId}`)
             return response.data
           },
         }),

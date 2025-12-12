@@ -16,7 +16,7 @@ import { getActiveCampuses } from '@/api/campusApi'
 const USERS_PER_PAGE = 12
 
 export default function TemporaryUsers() {
-  const { toast } = useToast()
+  const { showToast } = useToast()
   const { selectedCampusId } = useCampusStore()
   
   const [users, setUsers] = useState<any[]>([])
@@ -100,7 +100,7 @@ export default function TemporaryUsers() {
 
   const handleUserFormSubmit = async (data: any) => {
     if (!selectedCampusId) {
-      toast.error('Please select a campus first')
+      showToast('Please select a campus first', 'error')
       return
     }
 
@@ -114,10 +114,10 @@ export default function TemporaryUsers() {
       let result
       if (editingUser) {
         result = await updateUser(editingUser.id, userData)
-        toast.success('User updated successfully')
+        showToast('User updated successfully', 'success')
       } else {
         result = await createUser(userData)
-        toast.success('User created successfully')
+        showToast('User created successfully', 'success')
       }
       
       // Check if result is valid
@@ -131,7 +131,7 @@ export default function TemporaryUsers() {
     } catch (error: any) {
       console.error('Failed to save user:', error)
       const errorMessage = error?.response?.data?.error || error?.message || 'Failed to save user'
-      toast.error(errorMessage)
+      showToast(errorMessage, 'error')
     } finally {
       setIsSubmitting(false)
     }

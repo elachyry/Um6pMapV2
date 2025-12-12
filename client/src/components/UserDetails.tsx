@@ -49,7 +49,7 @@ export function UserDetails({ userId, onClose }: UserDetailsProps) {
   const fetchUserDetails = async () => {
     setIsLoading(true)
     try {
-      const response = await apiClient.get(`/users/${userId}`)
+      const response = await apiClient.get<{ data: any }>(`/users/${userId}`)
       setUser(response.data)
     } catch (error) {
       console.error('Failed to fetch user details:', error)
@@ -61,7 +61,7 @@ export function UserDetails({ userId, onClose }: UserDetailsProps) {
   const fetchAuditLogs = async () => {
     setIsLoadingAudit(true)
     try {
-      const response = await apiClient.get(`/users/${userId}/audit-logs`)
+      const response = await apiClient.get<{ data: any }>(`/users/${userId}/audit-logs`)
       setAuditLogs(response.data || [])
     } catch (error) {
       console.error('Failed to fetch audit logs:', error)

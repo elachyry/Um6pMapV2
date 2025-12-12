@@ -1342,7 +1342,7 @@ export function ReservationsManagement() {
             ) : (
               <>
                 {/* Buildings Grid */}
-                {renderPlacesGrid(buildings, 'buildings')}
+                {renderPlacesGrid(buildings)}
                 
                 {/* Pagination */}
                 {renderPagination(
@@ -1401,7 +1401,7 @@ export function ReservationsManagement() {
             ) : (
               <>
                 {/* Locations Grid */}
-                {renderPlacesGrid(locations, 'locations')}
+                {renderPlacesGrid(locations)}
                 
                 {/* Pagination */}
                 {renderPagination(
@@ -1460,7 +1460,7 @@ export function ReservationsManagement() {
             ) : (
               <>
                 {/* Open Spaces Grid */}
-                {renderPlacesGrid(openSpaces, 'openSpaces')}
+                {renderPlacesGrid(openSpaces)}
                 
                 {/* Pagination */}
                 {renderPagination(
