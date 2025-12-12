@@ -36,14 +36,11 @@ RUN npm install --legacy-peer-deps
 WORKDIR /app
 COPY server/ ./server/
 COPY client/ ./client/
+COPY server/prisma/ ./prisma/
 
 # Copy tsconfig files
 COPY server/tsconfig.json ./server/
 COPY client/tsconfig.json ./client/
-
-# Copy Prisma schema
-WORKDIR /app/server
-COPY server/prisma/ ./prisma/
 
 # Build client first
 WORKDIR /app/client
@@ -55,16 +52,12 @@ ENV VITE_MAPBOX_API_KEY=$VITE_MAPBOX_API_KEY
 RUN npm run build
 
 # Generate Prisma client before building TypeScript
-WORKDIR /app/server
+WORKDIR /app/prisma
 RUN npx prisma generate
 
-# Build the TypeScript server (force emit despite errors)
-# Using multiple fallback strategies to ensure build succeeds
-RUN npx tsc --noEmitOnError false --skipLibCheck || \
-    npx tsc --skipLibCheck --noEmitOnError false || \
-    (npx tsc --skipLibCheck || true) && \
-    echo "Build completed - checking dist folder..." && \
-    ls -la dist/ || echo "Dist folder check complete"
+# Build the TypeScript server
+WORKDIR /app/server
+RUN npm run build
 
 # Production stage
 FROM node:20-alpine AS production
@@ -95,13 +88,17 @@ COPY client/package*.json ./client/
 WORKDIR /app/server
 RUN npm install --omit=dev --legacy-peer-deps
 
+# Install client dependencies (needed for serving static files)
+WORKDIR /app/client
+RUN npm install --omit=dev --legacy-peer-deps
+
 # Switch back to /app for copying files
 WORKDIR /app
 
 # Copy built artifacts and necessary files
 COPY --from=builder /app/server/dist ./server/dist
 COPY --from=builder /app/client/dist ./client/dist
-COPY --from=builder /app/server/prisma ./server/prisma
+COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/server/node_modules/.prisma ./server/node_modules/.prisma
 COPY --from=builder /app/server/node_modules/@prisma ./server/node_modules/@prisma
 
@@ -127,4 +124,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8082}/api/health || exit 1
 
 # Start the application
-CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Generating Prisma client...' && npx prisma generate && echo 'Prisma client generated' && echo 'Pushing database schema...' && npx prisma db push --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
+CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Generating Prisma client...' && npx prisma generate --schema=../prisma/schema.prisma && echo 'Prisma client generated' && echo 'Pushing database schema...' && npx prisma db push --schema=../prisma/schema.prisma --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
