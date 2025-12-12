@@ -82,6 +82,27 @@ async function buildServer() {
     },
   })
 
+  // Health check endpoint
+  server.get('/api/health', async () => {
+    try {
+      // Test database connection
+      await prisma.$queryRaw`SELECT 1`
+      return {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+        uptime: process.uptime()
+      }
+    } catch (error) {
+      return {
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        database: 'disconnected',
+        uptime: process.uptime()
+      }
+    }
+  })
+
   // Register WebSocket
   await server.register(websocket)
 
