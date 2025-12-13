@@ -59,9 +59,9 @@ RUN npm install prisma@5.22.0 @prisma/client@5.22.0 --save-exact
 WORKDIR /app/prisma
 RUN ../server/node_modules/.bin/prisma generate
 
-# Build the TypeScript server (skip type checking to allow build)
+# Build the TypeScript server (skip type checking and resolve path aliases)
 WORKDIR /app/server
-RUN npx tsc --noEmit false --skipLibCheck true || echo "Build completed with warnings"
+RUN npx tsc --noEmit false --skipLibCheck true && npx tsc-alias || echo "Build completed with warnings"
 
 # Production stage
 FROM node:20-alpine AS production
