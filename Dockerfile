@@ -55,9 +55,9 @@ RUN npm run build
 WORKDIR /app/server
 RUN npm install prisma@5.22.0 @prisma/client@5.22.0 --save-exact
 
-# Generate Prisma client before building TypeScript
+# Generate Prisma client before building TypeScript using local binary
 WORKDIR /app/prisma
-RUN npx prisma generate
+RUN ../server/node_modules/.bin/prisma generate
 
 # Build the TypeScript server (skip type checking to allow build)
 WORKDIR /app/server
@@ -128,4 +128,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8082}/api/health || exit 1
 
 # Start the application
-CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Installing Prisma 5.22.0...' && npm install -g prisma@5.22.0 @prisma/client@5.22.0 && echo 'Generating Prisma client...' && npx prisma generate --schema=../prisma/schema.prisma && echo 'Prisma client generated' && echo 'Pushing database schema...' && npx prisma db push --schema=../prisma/schema.prisma --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
+CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Generating Prisma client...' && node_modules/.bin/prisma generate --schema=../prisma/schema.prisma && echo 'Prisma client generated' && echo 'Pushing database schema...' && node_modules/.bin/prisma db push --schema=../prisma/schema.prisma --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
