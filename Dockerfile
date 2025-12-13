@@ -53,6 +53,8 @@ RUN npm run build
 
 # Generate Prisma client before building TypeScript
 WORKDIR /app/prisma
+# Install specific Prisma version to avoid v7 breaking changes
+RUN npm install -g prisma@5.22.0 @prisma/client@5.22.0
 RUN npx prisma generate
 
 # Build the TypeScript server
@@ -124,4 +126,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:${PORT:-8082}/api/health || exit 1
 
 # Start the application
-CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Generating Prisma client...' && npx prisma generate --schema=../prisma/schema.prisma && echo 'Prisma client generated' && echo 'Pushing database schema...' && npx prisma db push --schema=../prisma/schema.prisma --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
+CMD ["sh", "-c", "echo 'Starting database initialization...' && echo 'Installing Prisma 5.22.0...' && npm install -g prisma@5.22.0 @prisma/client@5.22.0 && echo 'Generating Prisma client...' && npx prisma generate --schema=../prisma/schema.prisma && echo 'Prisma client generated' && echo 'Pushing database schema...' && npx prisma db push --schema=../prisma/schema.prisma --accept-data-loss && echo 'Database schema pushed' && echo 'Starting application...' && node dist/index.js"]
